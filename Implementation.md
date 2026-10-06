@@ -1,14 +1,23 @@
 # brcm-dma.resource — functions
 
-Everything goes through TagLists, as with `OpenScreenTagList()` and `GetDTAttrs()`. A **client** (`BDMA_OpenClientTagList`) keeps the default reply port and
-priority of its jobs; a **job** (`BDMA_AllocJobTagList`) is described and checked once, belongs to the client, and is started again as often as wanted
-(`BDMA_StartJob`). A job is an exec message: its end is a `ReplyMsg()` to its reply port, a signal port for a task or a software interrupt port for a driver.
-`BDMA_WaitJob`, `BDMA_CheckJob` and `BDMA_AbortJob` keep the meaning of `WaitIO`, `CheckIO` and `AbortIO`. The resource does not know what a transfer is for:
-a copy, a rectangle (rows and pitches), a fill or a move by whole rows, with a priority, a reply port and a few switches. The graphics driver, `CopyMem`, an
-audio ring, ... build their own functions on top of it. Architecture and the reasons: `docs/architecture.md`; the functions: `Autodocs/brcm-dma.doc`.
+Everything goes through TagLists.
 
-"Tested" is a run of the tools of `test/` on a Raspberry Pi 4B (BCM2711) at 1.8 GHz with the resource in the ROM of Emu68: `brcm-dma-test` (steps 1 to 9),
-`brcm-dma-stress` (every path, the queue, big jobs, a soak) and `brcm-dma-cost`.
+A **client** (`BDMA_OpenClientTagList`) keeps the default reply port and priority of its jobs;
+
+A **job** (`BDMA_AllocJobTagList`) is described and checked once, belongs to the client, and is started again as often as wanted (`BDMA_StartJob`).
+
+A job is an exec message: its end is a `ReplyMsg()` to its reply port, a signal port for a task or a software interrupt port for a driver.
+
+`BDMA_WaitJob`, `BDMA_CheckJob` and `BDMA_AbortJob` keep the meaning of `WaitIO`, `CheckIO` and `AbortIO`.
+
+The resource does not know what a transfer is for:
+a copy, a rectangle (rows and pitches), a fill or a move by whole rows, with a priority, a reply port and a few switches. The graphics driver, `CopyMem`, an audio ring, ... build their own functions on top of it.
+
+The functions: `Autodocs/brcm-dma.doc`.
+
+The Architecture and the reasons: `Architecture.md`;
+
+"Tested" is a run of the tools of `test/` on a Raspberry Pi 4B (BCM2711) at 1.8 GHz with the resource in the ROM of Emu68: `brcm-dma-test` (steps 1 to 9), `brcm-dma-stress` (every path, the queue, big jobs, a soak) and `brcm-dma-cost`.
 
 | Function (the vectors of the table follow this order) | Implemented | Since | Tested | What it does |
 |---|---|---|---|---|
@@ -30,7 +39,3 @@ audio ring, ... build their own functions on top of it. Architecture and the rea
 | BDMA_SetJobTags | Yes | V0.1 | Yes | inline variant |
 | BDMA_StartJob | Yes | V0.1 | Yes | queues the job (no allocation, no parsing: a software interrupt may call it); channels, order of the jobs, priorities, slices of big jobs, cache |
 | BDMA_WaitJob | Yes | V0.1 | Yes | sleeps until the job is replied and gives the result; any task may wait for any job, a second call gives it again |
-
-Not written yet (see `docs/architecture.md`): the arbitration of every channel at the cold start, `BDJ_After`, widths and bursts, the historic
-channels (`BDCLASS_NORMAL`, `BDCLASS_LITE`: measured with `brcm-dma-lab`, no backend), cyclic jobs and the raw chain of control blocks. `BDJ_Classes` is checked
-against the classes that the resource manages (the 40 bit channels only).
