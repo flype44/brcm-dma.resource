@@ -33,7 +33,9 @@ The BCM2835 family (Zero, Pi 2, Pi 3) and the historic channels are described an
 ## A quick usage example
 
 ```c
-client = BDMA_OpenClientTags(BDC_Name, "MyPlayer", TAG_DONE);
+client = BDMA_OpenClientTags(
+	BDC_Name, "MyProgram", 
+	TAG_DONE);
 
 job = BDMA_AllocJobTags(client, 
 	BDJ_Src,      frame, 
