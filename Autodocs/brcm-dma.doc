@@ -1,0 +1,505 @@
+TABLE OF CONTENTS
+
+brcm-dma.resource/BDMA_AbortJob
+brcm-dma.resource/BDMA_AddJobTagList
+brcm-dma.resource/BDMA_AddJobTags
+brcm-dma.resource/BDMA_AllocJobTagList
+brcm-dma.resource/BDMA_AllocJobTags
+brcm-dma.resource/BDMA_CheckJob
+brcm-dma.resource/BDMA_CloseClient
+brcm-dma.resource/BDMA_FreeJob
+brcm-dma.resource/BDMA_OpenClientTagList
+brcm-dma.resource/BDMA_OpenClientTags
+brcm-dma.resource/BDMA_QueryInfoTagList
+brcm-dma.resource/BDMA_QueryInfoTags
+brcm-dma.resource/BDMA_QueryJobTagList
+brcm-dma.resource/BDMA_QueryJobTags
+brcm-dma.resource/BDMA_SetJobTagList
+brcm-dma.resource/BDMA_SetJobTags
+brcm-dma.resource/BDMA_StartJob
+brcm-dma.resource/BDMA_WaitJob
+
+brcm-dma.resource/BDMA_AbortJob                     brcm-dma.resource/BDMA_AbortJob
+
+   NAME
+	BDMA_AbortJob -- stop a job (V0.1)
+
+   SYNOPSIS
+	BDMA_AbortJob( job )
+	a0
+
+	VOID BDMA_AbortJob(struct BDMAJob *);
+
+   FUNCTION
+	As AbortIO() does for a request. A job that runs is stopped with the sequence of the hardware, one that waits in the queue is removed; the job is
+	replied to its reply port with BDERR_ABORTED. A job that is over is left alone. A job from BDMA_AddJobTagList() that was replied is taken off the
+	port and freed by this call.
+
+	What the job had already written stays written.
+
+   INPUTS
+	job             a job
+
+   RESULTS
+	none
+
+   EXAMPLES
+	BDMA_AbortJob(job);
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_CheckJob()
+
+brcm-dma.resource/BDMA_AddJobTagList           brcm-dma.resource/BDMA_AddJobTagList
+
+   NAME
+	BDMA_AddJobTagList -- describe a job and start it, for one use (V0.1)
+
+   SYNOPSIS
+	job = BDMA_AddJobTagList( client, tagList )
+	d0                        a0      a1
+
+	struct BDMAJob *BDMA_AddJobTagList(struct BDMAClient *, CONST struct TagItem *);
+
+   FUNCTION
+	BDMA_AllocJobTagList() and BDMA_StartJob() in one call. The job is freed by the BDMA_WaitJob() or the BDMA_AbortJob() that ends it: it is for a job
+	that is used once. A job that BDJ_NoWait refused is replied at once, BDMA_WaitJob() then gives BDERR_BUSY.
+
+   INPUTS
+	client          a client, from BDMA_OpenClientTagList()
+	tagList         the tags of BDMA_AllocJobTagList()
+
+   RESULTS
+	job             a job, or NULL: BDJ_ErrorCode says why
+
+   EXAMPLES
+	job = BDMA_AddJobTags(client, BDJ_Src, src, BDJ_Dst, dst, BDJ_Length, 4096, TAG_DONE);
+	if (job != NULL)
+	    error = BDMA_WaitJob(job);
+
+   NOTES
+	A task context (the tags are parsed here).
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AllocJobTagList(), brcm-dma.resource/BDMA_StartJob(), brcm-dma.resource/BDMA_WaitJob()
+
+brcm-dma.resource/BDMA_AddJobTags                 brcm-dma.resource/BDMA_AddJobTags
+
+   NAME
+	BDMA_AddJobTags -- BDMA_AddJobTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	job = BDMA_AddJobTags( client, tag1Type, ... )
+	d0                     a0      a1
+
+	struct BDMAJob *BDMA_AddJobTags(struct BDMAClient *, ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_AddJobTagList(), the tags follow as arguments (pairs of a tag and its value, ended by TAG_DONE). It is not a function of the
+	resource: it is generated inline from the SFD, as OpenScreenTags() is.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AddJobTagList()
+
+brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagList
+
+   NAME
+	BDMA_AllocJobTagList -- describe a job (V0.1)
+
+   SYNOPSIS
+	job = BDMA_AllocJobTagList( client, tagList )
+	d0                          a0      a1
+
+	struct BDMAJob *BDMA_AllocJobTagList(struct BDMAClient *, CONST struct TagItem *);
+
+   FUNCTION
+	The tags are parsed and checked once, here, in a task context; the engine starts with the first job. The job belongs to the client until
+	BDMA_FreeJob(). BDMA_StartJob() queues it, as many times as wanted; BDMA_SetJobTagList() changes it in between.
+
+	A job is a copy (BDJ_Src), a fill (BDJ_FillValue) or, with BDJ_Move, a move by whole rows; with BDJ_Rows a rectangle.
+
+   INPUTS
+	client          a client
+	tagList         the tags of the job
+
+	BDJ_Src         ULONG, address of the first byte to read (not with BDJ_FillValue)
+	BDJ_Dst         ULONG, address of the first byte to write (required)
+	BDJ_FillValue   ULONG, a 32 bit value written again and again (instead of BDJ_Src)
+	BDJ_Length      ULONG, bytes of a row, a multiple of 4 (required)
+	BDJ_Rows        ULONG, number of rows, default 1, 65535 at most
+	BDJ_SrcPitch    ULONG, bytes between two source rows, default BDJ_Length
+	BDJ_DstPitch    ULONG, bytes between two destination rows, default BDJ_Length
+	BDJ_Move        BOOL, the areas may overlap by whole rows (a scroll); the pitches must be equal; an overlap inside a row is BDERR_OVERLAP
+	BDJ_NoCache     BOOL, no cache maintenance: for memory that the CPU does not cache, or that the caller looked after
+	BDJ_NoWait      BOOL, BDERR_BUSY (when the job is started) instead of waiting when every channel is busy
+	BDJ_Priority    ULONG, BDPRI_LOW, BDPRI_NORMAL or BDPRI_HIGH, default the priority of the client
+	BDJ_ReplyPort   struct MsgPort *, where the job is replied when it is over, default the port of the client
+	BDJ_Classes     ULONG, the classes of channel the job may run on (BDCLASS_DMA40, BDCLASS_NORMAL, BDCLASS_LITE), default every class that can do it
+	BDJ_Timeout     ULONG, microseconds: the longest a slice of the job (a megabyte at most) may stay on a channel; 0 = no limit; default 1000000. Over it the
+	                channel is stopped and the job is replied with BDERR_TIMEOUT. A watchdog on the vertical blank checks it: the resolution is a tick (20 ms)
+	BDJ_Strict      BOOL, a tag that this version does not know is BDERR_ARGS instead of being ignored
+	BDJ_ErrorCode   ULONG *, receives BDERR_OK, or the reason why the job could not be made
+
+   RESULTS
+	job             a job, or NULL
+
+	BDERR_UNAVAILABLE   no engine, or no channel of the classes allowed
+	BDERR_ARGS          a missing, wrong or incompatible tag, an address or a length that is not a multiple of 4, a pitch smaller than the length
+	BDERR_RANGE         an address that is not memory
+	BDERR_OVERLAP       the source and the destination overlap (BDJ_Move: inside a row)
+	BDERR_TOOBIG        too many rows, or a row of a gigabyte
+
+	Once started, a job can end with BDERR_BUSY (BDJ_NoWait), BDERR_ABORTED, BDERR_TIMEOUT or BDERR_HW: BDMA_WaitJob() gives it.
+
+   EXAMPLES
+	job = BDMA_AllocJobTags(client, BDJ_Src, src, BDJ_Dst, dst, BDJ_Length, 4096, BDJ_ErrorCode, &error, TAG_DONE);
+
+   NOTES
+	The jobs are run as if they were done one by one in the order in which they are started: a job that writes what an earlier one reads or writes
+	waits for it; jobs that touch different memory run together, on the channels there are. A job of more than a megabyte runs in slices, so that a
+	more urgent one does not wait for its end.
+
+	Unless BDJ_NoCache, the data cache is written back before the transfer and dropped after it, before the reply: the CPU reads what the DMA wrote.
+	The memory of the RTG board (BDI_VideoBase, BDI_VideoSize), which the CPU does not cache, is left alone: a job inside it needs no BDJ_NoCache.
+
+	A task context (utility.library is opened here).
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_StartJob(), brcm-dma.resource/BDMA_SetJobTagList(), brcm-dma.resource/BDMA_FreeJob()
+
+brcm-dma.resource/BDMA_AllocJobTags             brcm-dma.resource/BDMA_AllocJobTags
+
+   NAME
+	BDMA_AllocJobTags -- BDMA_AllocJobTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	job = BDMA_AllocJobTags( client, tag1Type, ... )
+	d0                       a0      a1
+
+	struct BDMAJob *BDMA_AllocJobTags(struct BDMAClient *, ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_AllocJobTagList(); generated inline from the SFD, not a function of the resource.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AllocJobTagList()
+
+brcm-dma.resource/BDMA_CheckJob                     brcm-dma.resource/BDMA_CheckJob
+
+   NAME
+	BDMA_CheckJob -- has the job been replied? (V0.1)
+
+   SYNOPSIS
+	done = BDMA_CheckJob( job )
+	d0                    a0
+
+	BOOL BDMA_CheckJob(struct BDMAJob *);
+
+   FUNCTION
+	As CheckIO() does for a request: TRUE when the job was replied to its port (or was never started), FALSE while it is in flight. It does not give the
+	result and does not free anything: BDMA_WaitJob() does, or GetMsg() on the port.
+
+   INPUTS
+	job             a job
+
+   RESULTS
+	done            TRUE or FALSE
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_WaitJob()
+
+brcm-dma.resource/BDMA_CloseClient               brcm-dma.resource/BDMA_CloseClient
+
+   NAME
+	BDMA_CloseClient -- end a session (V0.1)
+
+   SYNOPSIS
+	BDMA_CloseClient( client )
+	a0
+
+	VOID BDMA_CloseClient(struct BDMAClient *);
+
+   FUNCTION
+	What is in flight is aborted, the jobs of the client are freed, and so is its port when the client made it. A job that is over but whose reply is
+	still to come is waited for, a few milliseconds at most.
+
+   INPUTS
+	client          a client, or NULL
+
+   NOTES
+	The replies that wait on a port that is not the client's own are the program's to take (GetMsg(), BDMA_WaitJob()) before it closes. A task that
+	leaves without closing its client leaves its jobs running: the DMA may then write into memory that was freed, as a device does with the
+	IORequest of a task that is gone.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_OpenClientTagList()
+
+brcm-dma.resource/BDMA_FreeJob                       brcm-dma.resource/BDMA_FreeJob
+
+   NAME
+	BDMA_FreeJob -- give a job back (V0.1)
+
+   SYNOPSIS
+	BDMA_FreeJob( job )
+	a0
+
+	VOID BDMA_FreeJob(struct BDMAJob *);
+
+   FUNCTION
+	A job that is in flight, or over whose reply has not come yet, is left alone: wait for it (BDMA_WaitJob()) or abort it first.
+
+   INPUTS
+	job             a job from BDMA_AllocJobTagList(), or NULL
+
+   NOTES
+	The reply of a job must have been taken off its port (BDMA_WaitJob(), GetMsg()) before the job is freed.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AllocJobTagList()
+
+brcm-dma.resource/BDMA_OpenClientTagList   brcm-dma.resource/BDMA_OpenClientTagList
+
+   NAME
+	BDMA_OpenClientTagList -- begin a session (V0.1)
+
+   SYNOPSIS
+	client = BDMA_OpenClientTagList( tagList )
+	d0                               a0
+
+	struct BDMAClient *BDMA_OpenClientTagList(CONST struct TagItem *);
+
+   FUNCTION
+	A client names the program for the tools, keeps the default reply port and priority of its jobs, and gives them back when it is closed. Without
+	BDC_ReplyPort it makes a port of its own: that port belongs to the task that opens the client, which is the only one that can sleep in
+	BDMA_WaitJob() for the jobs that use it.
+
+   INPUTS
+	tagList         BDC_Name         STRPTR, a name (copied, 31 characters at most)
+	                BDC_ReplyPort    struct MsgPort *, the default reply port of the jobs: a signal port (PA_SIGNAL) for a task, a software interrupt
+	                                 port (PA_SOFTINT) for an interrupt handler
+	                BDC_Priority     ULONG, the default BDPRI_* of the jobs
+	                BDJ_ErrorCode    ULONG *, receives BDERR_OK or the reason
+
+   RESULTS
+	client          a client, or NULL
+
+   EXAMPLES
+	client = BDMA_OpenClientTags(BDC_Name, "MyPlayer", TAG_DONE);
+
+   NOTES
+	A task context.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_CloseClient()
+
+brcm-dma.resource/BDMA_OpenClientTags         brcm-dma.resource/BDMA_OpenClientTags
+
+   NAME
+	BDMA_OpenClientTags -- BDMA_OpenClientTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	client = BDMA_OpenClientTags( tag1Type, ... )
+	d0                            a0
+
+	struct BDMAClient *BDMA_OpenClientTags(ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_OpenClientTagList(); generated inline from the SFD, not a function of the resource.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_OpenClientTagList()
+
+brcm-dma.resource/BDMA_QueryInfoTagList             brcm-dma.resource/BDMA_QueryInfoTagList
+
+   NAME
+	BDMA_QueryInfoTagList -- what the engine is (V0.1)
+
+   SYNOPSIS
+	answers = BDMA_QueryInfoTagList( tagList )
+	d0                           a0
+
+	ULONG BDMA_QueryInfoTagList(CONST struct TagItem *);
+
+   FUNCTION
+	As GetDTAttrs() does: each tag names an attribute and the ULONG * that goes with it receives the value. A tag that this version does not know is
+	skipped and its place left alone (a client that asks for something newer puts a sentinel in it first). The engine starts with the first call that
+	needs to know.
+
+   INPUTS
+	tagList         BDI_Available    TRUE when an engine runs and proved itself
+	                BDI_Version      (version << 16) | revision of the resource
+	                BDI_Interrupt    TRUE when the end of a job comes by interrupt
+	                BDI_Model        BDM_BCM2711 (Pi 4B, 400, CM4) or BDM_BCM2835 (the family of the Zero, Pi 2, Pi 3: not written)
+	                BDI_Features     BDFF_RECT, BDFF_BIGBLOCKS, BDFF_MOVE, BDFF_WIDE, BDFF_FILL
+	                BDI_Channels     the mask of the channels that the resource manages
+	                BDI_Classes      BDCLASS_*, the classes of those channels
+	                BDI_VideoBase    the memory of the RTG board, which the CPU does not cache (0 if none)
+	                BDI_VideoSize    its size
+	                BDI_MaxRows      the most rows of a rectangle
+	                BDI_Jobs         jobs done since the start
+	                BDI_MegaBytes    megabytes moved since the start
+	                BDI_Failures     jobs that failed
+
+   RESULTS
+	answers         the number of values written
+
+   EXAMPLES
+	BDMA_QueryInfoTags(BDI_Available, &available, BDI_Classes, &classes, TAG_DONE);
+
+   NOTES
+	A task context.
+
+brcm-dma.resource/BDMA_QueryInfoTags                   brcm-dma.resource/BDMA_QueryInfoTags
+
+   NAME
+	BDMA_QueryInfoTags -- BDMA_QueryInfoTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	answers = BDMA_QueryInfoTags( tag1Type, ... )
+	d0                        a0
+
+	ULONG BDMA_QueryInfoTags(ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_QueryInfoTagList(); generated inline from the SFD, not a function of the resource.
+
+brcm-dma.resource/BDMA_QueryJobTagList       brcm-dma.resource/BDMA_QueryJobTagList
+
+   NAME
+	BDMA_QueryJobTagList -- what a job says about itself (V0.1)
+
+   SYNOPSIS
+	answers = BDMA_QueryJobTagList( job, tagList )
+	d0                              a0   a1
+
+	ULONG BDMA_QueryJobTagList(struct BDMAJob *, CONST struct TagItem *);
+
+   FUNCTION
+	As GetDTAttrs() does: each tag names a value and the ULONG * that goes with it receives it. A tag that this version does not know is skipped and its
+	place left alone.
+
+   INPUTS
+	job             a job
+	tagList         BDJI_State       BDJS_QUEUED, BDJS_RUNNING, BDJS_DONE, BDJS_ABORTED, BDJS_FAILED or BDJS_IDLE (described, not started)
+	                BDJI_Error       BDERR_*, once the job is over
+	                BDJI_BytesDone   the bytes of the job once it is over (0 for a job that failed or was aborted)
+
+   RESULTS
+	answers         the number of values written
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_WaitJob()
+
+brcm-dma.resource/BDMA_QueryJobTags             brcm-dma.resource/BDMA_QueryJobTags
+
+   NAME
+	BDMA_QueryJobTags -- BDMA_QueryJobTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	answers = BDMA_QueryJobTags( job, tag1Type, ... )
+	d0                           a0   a1
+
+	ULONG BDMA_QueryJobTags(struct BDMAJob *, ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_QueryJobTagList(); generated inline from the SFD, not a function of the resource.
+
+brcm-dma.resource/BDMA_SetJobTagList           brcm-dma.resource/BDMA_SetJobTagList
+
+   NAME
+	BDMA_SetJobTagList -- change a job that is not in flight (V0.1)
+
+   SYNOPSIS
+	error = BDMA_SetJobTagList( job, tagList )
+	d0                          a0   a1
+
+	LONG BDMA_SetJobTagList(struct BDMAJob *, CONST struct TagItem *);
+
+   FUNCTION
+	The tags name what changes (an address, the length, the rows, a pitch, a priority), what they leave out stays; the job is checked again. The kind
+	of the job does not change: a copy stays a copy, a fill a fill.
+
+   INPUTS
+	job             a job
+	tagList         tags of BDMA_AllocJobTagList()
+
+   RESULTS
+	error           BDERR_OK; BDERR_BUSY if the job is in flight; the other reasons of BDMA_AllocJobTagList(), and then the job is as it was
+
+   EXAMPLES
+	BDMA_SetJobTags(job, BDJ_Src, nextFrame, TAG_DONE);
+	BDMA_StartJob(job);
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AllocJobTagList(), brcm-dma.resource/BDMA_StartJob()
+
+brcm-dma.resource/BDMA_SetJobTags                 brcm-dma.resource/BDMA_SetJobTags
+
+   NAME
+	BDMA_SetJobTags -- BDMA_SetJobTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	error = BDMA_SetJobTags( job, tag1Type, ... )
+	d0                       a0   a1
+
+	LONG BDMA_SetJobTags(struct BDMAJob *, ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_SetJobTagList(); generated inline from the SFD, not a function of the resource.
+
+brcm-dma.resource/BDMA_StartJob                     brcm-dma.resource/BDMA_StartJob
+
+   NAME
+	BDMA_StartJob -- queue a job (V0.1)
+
+   SYNOPSIS
+	BDMA_StartJob( job )
+	a0
+
+	VOID BDMA_StartJob(struct BDMAJob *);
+
+   FUNCTION
+	Queues the job, described by BDMA_AllocJobTagList(). It allocates nothing and parses nothing: a software interrupt may call it (the next block of a
+	transfer, for instance). When the job is over it is replied to its reply port, with the result in bj_Error and the bytes in bj_Done. With
+	BDJ_NoWait and every channel busy it is replied at once, with BDERR_BUSY. A job that is in flight is left alone.
+
+   INPUTS
+	job             a job
+
+   RESULTS
+	none; the result comes with the reply (BDMA_WaitJob(), or GetMsg() on the port)
+
+   NOTES
+	The reply of an earlier run must have been taken off the port before the job is started again.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_AbortJob()
+
+brcm-dma.resource/BDMA_WaitJob                       brcm-dma.resource/BDMA_WaitJob
+
+   NAME
+	BDMA_WaitJob -- sleep until a job is over (V0.1)
+
+   SYNOPSIS
+	error = BDMA_WaitJob( job )
+	d0                    a0
+
+	LONG BDMA_WaitJob(struct BDMAJob *);
+
+   FUNCTION
+	As WaitIO() does for a request: sleeps until the job is replied and gives the result. The task is asleep, not looping: the 68k is free for the others.
+	Any task may wait for any job: the owner of a signal port sleeps on the signal of the port, any other task on a signal of its own that the reply wakes.
+	A signal port holds the reply until it is taken: this call takes it (use this call or GetMsg() on such a port, not both); a port that wakes a software
+	interrupt has its reply taken in that interrupt. A second call gives the same result again. A job from BDMA_AddJobTagList() is freed here.
+
+   INPUTS
+	job             a job that was started
+
+   RESULTS
+	error           BDERR_OK or the reason: BDERR_BUSY (BDJ_NoWait, or no signal left to sleep on), BDERR_ABORTED, BDERR_TIMEOUT, BDERR_HW; BDERR_ARGS for a job that
+	                was not started
+
+   NOTES
+	A job whose port wakes a software interrupt is taken in that interrupt with GetMsg(); another task may still wait for it here.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_StartJob(), brcm-dma.resource/BDMA_CheckJob(), brcm-dma.resource/BDMA_AbortJob()

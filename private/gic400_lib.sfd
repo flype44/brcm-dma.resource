@@ -1,0 +1,32 @@
+==id $Id: gic400.sfd 1.0.0 $
+* "gic400.library"
+==base _GIC400_Base
+==basetype struct Library *
+==libname gic400.library
+==bias 30
+==public
+==include <exec/types.h>
+==include <exec/interrupts.h>
+==include <libraries/gic400.h>
+LONG AddIntServerEx(ULONG irq, UBYTE priority, BOOL edge, struct Interrupt *interrupt) (D0,D1,D2,A1)
+LONG RemIntServerEx(ULONG irq, struct Interrupt *interrupt) (D0, A1)
+LONG GetIntStatus(ULONG irq, BOOL *pending, BOOL *active, BOOL *enabled) (D0,A1,A2,A3)
+LONG EnableInt(ULONG irq) (D0)
+LONG DisableInt(ULONG irq) (D0)
+LONG SetIntPriority(ULONG irq, UBYTE priority) (D0,D1)
+LONG GetIntPriority(ULONG irq) (D0)
+LONG SetIntTriggerEdge(ULONG irq) (D0)
+LONG SetIntTriggerLevel(ULONG irq) (D0)
+LONG RouteIntToCpu(ULONG irq, UBYTE cpu) (D0,D1)
+LONG UnrouteIntFromCpu(ULONG irq, UBYTE cpu) (D0,D1)
+LONG QueryIntRoute(ULONG irq) (D0)
+LONG SetIntPending(ULONG irq) (D0)
+LONG ClearIntPending(ULONG irq) (D0)
+LONG SetIntActive(ULONG irq) (D0)
+LONG ClearIntActive(ULONG irq) (D0)
+LONG SetPriorityMask(UBYTE mask) (D0)
+LONG GetPriorityMask(void) ()
+LONG GetRunningPriority(void) ()
+LONG GetHighestPending(void) ()
+LONG GetControllerInfo(struct GICInfo *info) (A1)
+==end

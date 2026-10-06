@@ -1,0 +1,36 @@
+==id $Id: brcm-dma_lib.sfd 0.1 $
+* "brcm-dma.resource"
+==base _BrcmDmaBase
+==basetype APTR
+==libname brcm-dma
+==include <exec/types.h>
+==include <exec/ports.h>
+==include <utility/tagitem.h>
+==include <resources/brcm-dma.h>
+==bias 6
+==public
+VOID BDMA_AbortJob(struct BDMAJob *job) (A0)
+struct BDMAJob *BDMA_AddJobTagList(struct BDMAClient *client, CONST struct TagItem *tagList) (A0,A1)
+==varargs
+struct BDMAJob *BDMA_AddJobTags(struct BDMAClient *client, ULONG tag1Type, ...) (A0,A1)
+struct BDMAJob *BDMA_AllocJobTagList(struct BDMAClient *client, CONST struct TagItem *tagList) (A0,A1)
+==varargs
+struct BDMAJob *BDMA_AllocJobTags(struct BDMAClient *client, ULONG tag1Type, ...) (A0,A1)
+BOOL BDMA_CheckJob(struct BDMAJob *job) (A0)
+VOID BDMA_CloseClient(struct BDMAClient *client) (A0)
+VOID BDMA_FreeJob(struct BDMAJob *job) (A0)
+struct BDMAClient *BDMA_OpenClientTagList(CONST struct TagItem *tagList) (A0)
+==varargs
+struct BDMAClient *BDMA_OpenClientTags(ULONG tag1Type, ...) (A0)
+ULONG BDMA_QueryInfoTagList(CONST struct TagItem *tagList) (A0)
+==varargs
+ULONG BDMA_QueryInfoTags(ULONG tag1Type, ...) (A0)
+ULONG BDMA_QueryJobTagList(struct BDMAJob *job, CONST struct TagItem *tagList) (A0,A1)
+==varargs
+ULONG BDMA_QueryJobTags(struct BDMAJob *job, ULONG tag1Type, ...) (A0,A1)
+LONG BDMA_SetJobTagList(struct BDMAJob *job, CONST struct TagItem *tagList) (A0,A1)
+==varargs
+LONG BDMA_SetJobTags(struct BDMAJob *job, ULONG tag1Type, ...) (A0,A1)
+VOID BDMA_StartJob(struct BDMAJob *job) (A0)
+LONG BDMA_WaitJob(struct BDMAJob *job) (A0)
+==end
