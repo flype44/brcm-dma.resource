@@ -14,8 +14,12 @@
 
 #include "brcm-dma.h"
 
-/* keep: the tags change a request that already exists (BDMA_SetJobTagList()), what they do not name stays; defprio is the priority of the client */
-LONG BDMA_ParseTags(struct Library *UtilityBase, const struct TagItem *tags, struct BDMARequest *r, BOOL keep, ULONG defprio)
+LONG BDMA_ParseTags(
+    struct Library *UtilityBase, 
+    const struct TagItem *tags, 
+    struct BDMARequest *r, 
+    BOOL keep, 
+    ULONG defprio)
 {
     struct TagItem *t;
     const struct TagItem *list = tags;
@@ -23,23 +27,22 @@ LONG BDMA_ParseTags(struct Library *UtilityBase, const struct TagItem *tags, str
 
     if (!keep)
     {
-        r->bdr_Given = 0;
-        r->bdr_Src = 0;
-        r->bdr_Dst = 0;
-        r->bdr_Fill = 0;
-        r->bdr_Length = 0;
-        r->bdr_Rows = 1;
-        r->bdr_SrcPitch = 0;
-        r->bdr_DstPitch = 0;
-        r->bdr_Priority = defprio;
+        r->bdr_Given     = 0;
+        r->bdr_Src       = 0;
+        r->bdr_Dst       = 0;
+        r->bdr_Fill      = 0;
+        r->bdr_Length    = 0;
+        r->bdr_Rows      = 1;
+        r->bdr_SrcPitch  = 0;
+        r->bdr_DstPitch  = 0;
+        r->bdr_Priority  = defprio;
         r->bdr_ReplyPort = NULL;
-        r->bdr_Classes = BDCLASS_ALL;
-        r->bdr_Timeout = BDMA_DEFAULT_TIMEOUT;
+        r->bdr_Classes   = BDCLASS_ALL;
+        r->bdr_Timeout   = BDMA_DEFAULT_TIMEOUT;
     }
     r->bdr_ErrorCode = NULL;
     r->bdr_Unknown = 0;
 
-    /* NextTagItem() understands TAG_DONE, TAG_IGNORE, TAG_SKIP and TAG_MORE */
     while ((t = NextTagItem((struct TagItem **)&list)) != NULL)
     {
         switch (t->ti_Tag)
@@ -66,53 +69,84 @@ LONG BDMA_ParseTags(struct Library *UtilityBase, const struct TagItem *tags, str
 
     r->bdr_ErrorCode = error_code;
 
-    /* the source is an address or a value, one of them; the destination and the length are always needed */
     if (!(r->bdr_Given & BDRF_DST) || !(r->bdr_Given & BDRF_LENGTH))
+    {
         return BDERR_ARGS;
+    }
 
     if (((r->bdr_Given & BDRF_SRC) != 0) == ((r->bdr_Given & BDRF_FILL) != 0))
+    {
         return BDERR_ARGS;
+    }
 
-    if (r->bdr_Length == 0 || (r->bdr_Length & 3) || (r->bdr_Dst & 3) || ((r->bdr_Given & BDRF_SRC) && (r->bdr_Src & 3)))
+    if ((r->bdr_Length == 0) || 
+        (r->bdr_Length & 3) || 
+        (r->bdr_Dst & 3) || 
+        ((r->bdr_Given & BDRF_SRC) && (r->bdr_Src & 3)))
+    {
         return BDERR_ARGS;
+    }
 
     if (r->bdr_Rows == 0)
+    {
         return BDERR_ARGS;
+    }
 
     if (r->bdr_Rows > BDMA_MAX_ROWS)
+    {
         return BDERR_TOOBIG;
+    }
 
-    /* a pitch left out is the length: the rows follow one another */
     if (!(r->bdr_Given & BDRF_SRCPITCH))
+    {
         r->bdr_SrcPitch = r->bdr_Length;
+    }
+    
     if (!(r->bdr_Given & BDRF_DSTPITCH))
+    {
         r->bdr_DstPitch = r->bdr_Length;
+    }
 
     if ((r->bdr_Given & BDRF_FILL) && (r->bdr_Given & BDRF_SRCPITCH))
+    {
         return BDERR_ARGS;
+    }
 
-    if (r->bdr_Rows > 1 && (r->bdr_DstPitch < r->bdr_Length || ((r->bdr_Given & BDRF_SRC) && r->bdr_SrcPitch < r->bdr_Length) ||
-                           (r->bdr_DstPitch & 3) || (r->bdr_SrcPitch & 3)))
+    if ((r->bdr_Rows > 1) && (
+        (r->bdr_DstPitch < r->bdr_Length) || 
+        ((r->bdr_Given & BDRF_SRC) && r->bdr_SrcPitch < r->bdr_Length) || 
+        (r->bdr_DstPitch & 3) || (r->bdr_SrcPitch & 3)))
+    {
         return BDERR_ARGS;
+    }
 
-    /* a move needs a source and the same distance between the rows on both sides */
-    if ((r->bdr_Given & BDRF_MOVE) && (!(r->bdr_Given & BDRF_SRC) || r->bdr_SrcPitch != r->bdr_DstPitch))
+    if ((r->bdr_Given & BDRF_MOVE) && (!(r->bdr_Given & BDRF_SRC) || (r->bdr_SrcPitch != r->bdr_DstPitch)))
+    {
         return BDERR_ARGS;
+    }
 
     if (r->bdr_Priority > BDPRI_HIGH)
+    {
         return BDERR_ARGS;
+    }
 
-    /* at least one class, and only classes that exist */
     if (r->bdr_Classes == 0 || (r->bdr_Classes & ~(ULONG)BDCLASS_ALL))
+    {
         return BDERR_ARGS;
+    }
 
     if ((r->bdr_Given & BDRF_STRICT) && r->bdr_Unknown)
+    {
         return BDERR_ARGS;
+    }
 
     return BDERR_OK;
 }
 
-ULONG BDMA_FillQuery(struct Library *UtilityBase, const struct TagItem *tags, const struct BDMAStatus *s)
+ULONG BDMA_FillQuery(
+    struct Library *UtilityBase, 
+    const struct TagItem *tags, 
+    const struct BDMAStatus *s)
 {
     struct TagItem *t;
     const struct TagItem *list = tags;
@@ -138,7 +172,7 @@ ULONG BDMA_FillQuery(struct Library *UtilityBase, const struct TagItem *tags, co
             case BDI_Classes:   value = s->bds_Classes; break;
             case BDI_VideoBase: value = s->bds_VideoBase; break;
             case BDI_VideoSize: value = s->bds_VideoSize; break;
-            default:            continue;       /* not known to this version: the place of the answer is left alone */
+            default: continue;
         }
 
         if (to != NULL)

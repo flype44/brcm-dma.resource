@@ -13,12 +13,15 @@
 #include <exec/types.h>
 
 /*
-    VideoCore IV: the DMA engine of the BCM2835 family (Pi Zero, 1, 2, 3, Zero 2), which the BCM2711 keeps for its channels 0 to 10: the "normal" channels
-    and the "lite" ones (bit LITE of their DEBUG register, a length of 16 bits). What the generations share is here; the 40 bit channels of the BCM2711 are
+    VideoCore IV:
+	the DMA engine of the BCM2835 family (Pi Zero, 1, 2, 3, Zero 2),
+	which the BCM2711 keeps for its channels 0 to 10: the "normal" channels
+    and the "lite" ones (bit LITE of their DEBUG register, a length of 16 bits).
+	What the generations share is here; the 40 bit channels of the BCM2711 are
     in hw-vc6.h, which includes this file.
-
-    Emu68 maps the peripherals of the Pi at 0xf2000000: the bus address 0x7e000000 + n is at 0xf2000000 + n. The registers are little endian:
-    the 68k reads and writes them swapped.
+    Emu68 maps the peripherals of the Pi at 0xf2000000:
+	the bus address 0x7e000000 + n is at 0xf2000000 + n.
+	The registers are little endian: the 68k reads and writes them swapped.
 */
 
 #define LE32(x)                 __builtin_bswap32(x)
@@ -27,7 +30,7 @@
 
 /* System timer: the low word of the counter, 1 MHz */
 #define SYSTEM_TIMER_BASE       (ARM_IO_BASE + 0x003000UL)
-#define SYSTEM_TIMER_CLO        (SYSTEM_TIMER_BASE + 0x04)
+#define SYSTEM_TIMER_CLOCK      (SYSTEM_TIMER_BASE + 0x04)
 
 /* DMA: the channel n is at DMA_BASE + 0x100 * n (the 40 bit channels 11 to 14 are the node /scb/dma@7e007b00 of the device tree, see hw-vc6.h) */
 #define DMA_BASE                (ARM_IO_BASE + 0x007000UL)
@@ -77,7 +80,7 @@ static inline void dma_wr(ULONG channel, ULONG reg, ULONG value)
 /* microseconds, wrapping every 71 minutes: for differences only */
 static inline ULONG timer_now(void)
 {
-    return LE32(*(volatile ULONG *)SYSTEM_TIMER_CLO);
+    return LE32(*(volatile ULONG *)SYSTEM_TIMER_CLOCK);
 }
 
 #endif /* _HW_VC4_H */

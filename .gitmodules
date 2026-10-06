@@ -1,3 +1,9 @@
 [submodule "devicetree.resource"]
 	path = devicetree.resource
 	url = https://github.com/michalsc/devicetree.resource.git
+[submodule "mailbox.resource"]
+	path = mailbox.resource
+	url = https://github.com/michalsc/mailbox.resource.git
+[submodule "gic400.library"]
+	path = gic400.library
+	url = https://github.com/michalsc/gic400.library.git

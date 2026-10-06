@@ -40,7 +40,7 @@
 #include "mbox.h"
 #include "cache.h"
 
-#define FIRST_40BIT_CHANNEL 11              /* the registers of the node /scb/dma@7e007b00 start at the channel 11 */
+#define FIRST_40BIT_CHANNEL 11 /* the registers of the node /scb/dma@7e007b00 start at the channel 11 */
 #define LAST_40BIT_CHANNEL  14
 
 #define CONSTANT_SIZE       256
@@ -50,18 +50,21 @@
 #define GIC_MIN_REVISION    3
 
 /* Gives the GPU memory back (the engine did not start) */
-static void ReleaseGPU(struct Library *MailboxBase, struct BDMABase *BDMABase)
+static VOID ReleaseGPU(
+    struct Library *MailboxBase, 
+    struct BDMABase *BDMABase)
 {
-    UnlockMemory(MailboxBase, BDMABase->bdb_Handle);        /* the sequence of the firmware: lock, unlock, release (it may not have been locked: it does not matter) */
+    UnlockMemory(MailboxBase, BDMABase->bdb_Handle); /* the sequence of the firmware: lock, unlock, release (it may not have been locked: it does not matter) */
     ReleaseMemory(MailboxBase, BDMABase->bdb_Handle);
     BDMABase->bdb_Handle = 0;
 }
 
-/*
-    The way the Linux driver stops a channel: pause, wait for the transactions, default CS, reset. Also used by the sweep of the
-    start (a channel that an earlier session left running) and by BDMA_AbortJob(). Nothing waits long: the wait is bounded.
+/* The way the Linux driver stops a channel: pause, wait for the transactions, default CS, reset.
+   Also used by the sweep of the start (a channel that an earlier session left running) and by 
+   BDMA_AbortJob(). Nothing waits long: the wait is bounded.
 */
-void BDMA_StopChannel(struct BDMAChannel *channel)
+void BDMA_StopChannel(
+    struct BDMAChannel *channel)
 {
     ULONG chan = channel->bc_Number;
     ULONG timeout = 100;
@@ -70,57 +73,87 @@ void BDMA_StopChannel(struct BDMAChannel *channel)
     {
         dma_wr(chan, DMA_CS, dma_rd(chan, DMA_CS) & ~CS_ACTIVE);
 
-        while ((dma_rd(chan, DMA_CS) & CS_TRANSACTIONS) && --timeout)
-            ;
+        while ((dma_rd(chan, DMA_CS) & CS_TRANSACTIONS) && --timeout);
 
         dma_wr(chan, DMA_CS, CS_PROT);
         dma_wr(chan, DMA_DEBUG, dma_rd(chan, DMA_DEBUG) | DEBUG_RESET);
     }
 
-    /* END and INT of the session before, if any (it can have left them set), or the interrupt would be raised at once */
+    /* END and INT of the session before, if any (it can have left them set),
+       or the interrupt would be raised at once */
     dma_wr(chan, DMA_CS, CS_INT | CS_END | CS_PROT);
 }
 
-/* Is [address, address + bytes) memory that a transfer may touch: known to exec, or the RTG memory (/emu68 vc4-mem)? */
-BOOL BDMA_InMemory(struct BDMABase *BDMABase, ULONG address, ULONG bytes)
+/* Is (address, address + bytes) memory that a transfer may touch:
+   known to exec, or the RTG memory (/emu68 vc4-mem)?
+*/
+BOOL BDMA_InMemory(
+    struct BDMABase *BDMABase, 
+    ULONG address, 
+    ULONG bytes)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     ULONG last = address + bytes - 1;
 
     if (bytes == 0 || last < address)
+    {
         return FALSE;
+    }
 
     if (address >= BDMABase->bdb_VCBase && last - BDMABase->bdb_VCBase < BDMABase->bdb_VCSize)
+    {
         return TRUE;
+    }
 
     return TypeOfMem((APTR)address) != 0 && TypeOfMem((APTR)last) != 0;
 }
 
-/* Is [lo, hi) all in the memory of the RTG board? The CPU does not cache it: no cache maintenance there (what VideoCore.card knew, now the resource's) */
-BOOL BDMA_InVideoMemory(struct BDMABase *BDMABase, ULONG lo, ULONG hi)
+/* Is (lo, hi) all in the memory of the RTG board?
+   The CPU does not cache it: no cache maintenance there
+   (what VideoCore.card knew, now the resource's)
+*/
+BOOL BDMA_InVideoMemory(
+    struct BDMABase *BDMABase, 
+    ULONG lo, 
+    ULONG hi)
 {
-    return BDMABase->bdb_VCSize != 0 && hi > lo && lo >= BDMABase->bdb_VCBase && hi - BDMABase->bdb_VCBase <= BDMABase->bdb_VCSize;
+    return (
+        (BDMABase->bdb_VCSize != 0) && (hi > lo) && 
+        (lo >= BDMABase->bdb_VCBase) && 
+        (hi - BDMABase->bdb_VCBase <= BDMABase->bdb_VCSize));
 }
 
-static BOOL Meets(ULONG lo1, ULONG hi1, ULONG lo2, ULONG hi2)
+static BOOL Meets(
+    ULONG lo1, 
+    ULONG hi1, 
+    ULONG lo2, 
+    ULONG hi2)
 {
     return lo1 < hi1 && lo2 < hi2 && lo1 < hi2 && lo2 < hi1;
 }
 
-/* Two jobs conflict when one writes what the other reads or writes: the later one has to wait for the earlier one */
-static BOOL Conflict(const struct BDMAJob *a, const struct BDMAJob *b)
+/* Two jobs conflict when one writes what the other reads or writes:
+   the later one has to wait for the earlier one
+*/
+static BOOL Conflict(
+    const struct BDMAJob *a, 
+    const struct BDMAJob *b)
 {
     return Meets(a->bj_WriteLo, a->bj_WriteHi, b->bj_WriteLo, b->bj_WriteHi) ||
            Meets(a->bj_WriteLo, a->bj_WriteHi, b->bj_ReadLo, b->bj_ReadHi) ||
            Meets(a->bj_ReadLo, a->bj_ReadHi, b->bj_WriteLo, b->bj_WriteHi);
 }
 
-/*
-    Builds the chain of the job on the channel and starts it. `src`, `dst` are physical (the CPU address of RAM and of the RTG memory
-    under Emu68). With `reverse` (a move whose destination is above the source) the rows, and the blocks of a row, go from the last to
-    the first, or a block would overwrite source bytes that a later one still has to read (the overlap inside a row was refused).
+/* Builds the chain of the job on the channel and starts it.
+   src and dst are physical (the CPU address of RAM and of the RTG memory under Emu68).
+   With `reverse` (a move whose destination is above the source) the rows, and the blocks
+   of a row, go from the last to the first, or a block would overwrite source bytes that 
+   a later one still has to read (the overlap inside a row was refused).
 */
-static void StartChain(struct BDMABase *BDMABase, struct BDMAChannel *channel, struct BDMAJob *job)
+static VOID StartChain(
+    struct BDMABase *BDMABase, 
+    struct BDMAChannel *channel, 
+    struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     const struct BDMARequest *r = &job->bj_Request;
@@ -142,7 +175,10 @@ static void StartChain(struct BDMABase *BDMABase, struct BDMAChannel *channel, s
         /* The constant: 256 bytes of the value, which is what a burst of 16 beats of 128 bits reads (a burst reads its beats one after
            the other even when the source does not increment: with only 16 bytes the rest of the row got what lay behind them). */
         for (i = 0; i < CONSTANT_SIZE / 4; i++)
+        {
             channel->bc_Constant[i] = r->bdr_Fill;
+        }
+        
         CacheClearE((APTR)channel->bc_Constant, CONSTANT_SIZE, CACRF_ClearD);
     }
 
@@ -158,32 +194,41 @@ static void StartChain(struct BDMABase *BDMABase, struct BDMAChannel *channel, s
         ULONG head = (0 - t) & 15, body, tail, off[3], len[3];
 
         if (head > w)
+        {
             head = w;
+        }
+        
         body = (w - head) & ~15UL;
         tail = w - head - body;
 
-        off[0] = 0;             len[0] = head;
-        off[1] = head;          len[1] = body;
-        off[2] = head + body;   len[2] = tail;
-
+        off[0] = 0;
+        off[1] = head;
+        off[2] = head + body;
+        
+        len[0] = head;
+        len[1] = body;
+        len[2] = tail;
+        
         for (part = 0; part < 3; part++)
         {
             ULONG p = job->bj_Reverse ? 2 - part : part;
             ULONG *c = cb + k * DMA_CB_WORDS;
             ULONG info = INFO_INC | (p == 1 ? INFO_128_BURST16 : 0);
-            ULONG sinfo = fill ? info & ~INFO_INC : info;   /* a fill reads the same constant over and over */
+            ULONG sinfo = fill ? info & ~INFO_INC : info; /* a fill reads the same constant over and over */
 
             if (len[p] == 0)
+            {
                 continue;
+            }
 
-            c[DMA_CB_TI] = LE32(0);                         /* the interrupt of the last block is set below */
-            c[DMA_CB_SRC] = LE32(fill ? src : s + off[p]);
+            c[DMA_CB_TI]   = LE32(0); /* the interrupt of the last block is set below */
+            c[DMA_CB_SRC]  = LE32(fill ? src : s + off[p]);
             c[DMA_CB_SRCI] = LE32(sinfo);
-            c[DMA_CB_DST] = LE32(t + off[p]);
+            c[DMA_CB_DST]  = LE32(t + off[p]);
             c[DMA_CB_DSTI] = LE32(info);
-            c[DMA_CB_LEN] = LE32(len[p]);
+            c[DMA_CB_LEN]  = LE32(len[p]);
             c[DMA_CB_NEXT] = LE32((chain + (k + 1) * DMA_CB_BYTES) >> 5);
-            c[7] = 0;                                       /* reserved */
+            c[7] = 0; /* reserved */
             k++;
         }
 
@@ -194,23 +239,31 @@ static void StartChain(struct BDMABase *BDMABase, struct BDMAChannel *channel, s
 
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_NEXT] = 0;
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_TI] |= LE32(TI_INTEN);
+    
     if (DMA_CB_BYTES * k <= BDMA_LINEWISE_MAX)
+    {
         BDMA_PushLines((ULONG)cb, DMA_CB_BYTES * k);
+    }
     else
+    {
         CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
+    }
 
     dma_wr(channel->bc_Number, DMA_CS, CS_END | CS_PROT);
     dma_wr(channel->bc_Number, DMA_CB, chain >> 5);
     dma_wr(channel->bc_Number, DMA_CS, CS_WAIT_FOR_WRITES | CS_ACTIVE | CS_PROT);
 }
 
-/*
-    Picks the job that may start now on an idle channel and hands it to that channel: the best priority, then the order of submission,
-    among the jobs that conflict with no running job and with no OLDER job still waiting (a job never overtakes an older one it conflicts
-    with: the result is that of the jobs run one by one). Called with the interrupts off (Disable(), or from the interrupt). The job
-    is marked running, the channel is taken; the caller then calls StartChain() with the interrupts on if it can.
+/* Picks the job that may start now on an idle channel and hands it to that channel:
+   the best priority, then the order of submission, among the jobs that conflict with
+   no running job and with no OLDER job still waiting (a job never overtakes an older
+   one it conflicts with: the result is that of the jobs run one by one).
+   Called with the interrupts off (Disable(), or from the interrupt). The job is marked 
+   running, the channel is taken; the caller then calls StartChain() with the interrupts on if it can.
 */
-static struct BDMAChannel *Pick(struct BDMABase *BDMABase, struct BDMAJob **picked)
+static struct BDMAChannel *Pick(
+    struct BDMABase *BDMABase, 
+    struct BDMAJob **picked)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAChannel *channel = NULL;
@@ -218,44 +271,64 @@ static struct BDMAChannel *Pick(struct BDMABase *BDMABase, struct BDMAJob **pick
     ULONG i;
 
     for (i = 0; i < BDMABase->bdb_Channels; i++)
+    {
         if (BDMABase->bdb_Channel[i].bc_Job == NULL && BDMABase->bdb_Channel[i].bc_Registered)
         {
             channel = &BDMABase->bdb_Channel[i];
             break;
         }
+    }
 
     if (channel == NULL)
+    {
         return NULL;
+    }
 
-    for (j = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); j->bj_Node.mln_Succ != NULL; j = BDMA_NODEJOB(j->bj_Node.mln_Succ))
+    for (j = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
+        j->bj_Node.mln_Succ != NULL; 
+        j = BDMA_NODEJOB(j->bj_Node.mln_Succ))
     {
         BOOL free = TRUE;
 
         if (best != NULL && j->bj_Request.bdr_Priority <= best->bj_Request.bdr_Priority)
+        {
             continue;
+        }
 
         for (i = 0; i < BDMABase->bdb_Channels && free; i++)
         {
             struct BDMAJob *run = BDMABase->bdb_Channel[i].bc_Job;
 
             if (run != NULL && Conflict(j, run))
+            {
                 free = FALSE;
+            }
         }
 
         /* the queue is in the order of submission: the older jobs are in front of this one */
-        for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); o != j && free; o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
+        for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
+             o != j && free; 
+             o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
+        {
             if (Conflict(j, o))
+            {
                 free = FALSE;
+            }
+        }
 
         if (free)
+        {
             best = j;
+        }
     }
 
     if (best == NULL)
+    {
         return NULL;
+    }
 
     Remove(BDMA_JOBNODE(best));
-    best->bj_Start = timer_now();          /* with the state, in the same breath: the watchdog reads both (the chain is built a moment later) */
+    best->bj_Start = timer_now();  /* with the state, in the same breath: the watchdog reads both (the chain is built a moment later) */
     best->bj_State = BJS_RUNNING;
     best->bj_Channel = channel - BDMABase->bdb_Channel;
     channel->bc_Job = best;
@@ -264,8 +337,11 @@ static struct BDMAChannel *Pick(struct BDMABase *BDMABase, struct BDMAJob **pick
     return channel;
 }
 
-/* Starts what can start on the idle channels. For a task: the chains are built with the interrupts on. */
-void BDMA_Run(struct BDMABase *BDMABase)
+/* Starts what can start on the idle channels.
+   For a task: the chains are built with the interrupts on.
+*/
+void BDMA_Run(
+    struct BDMABase *BDMABase)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
 
@@ -279,18 +355,23 @@ void BDMA_Run(struct BDMABase *BDMABase)
         Enable();
 
         if (channel == NULL)
+        {
             return;
+        }
 
         StartChain(BDMABase, channel, job);
     }
 }
 
-/*
-    The watchdog: a vertical blank server, 50 or 60 times a second. A slice that has been on its channel longer than the BDJ_Timeout of its job is given up: the
-    channel is stopped, the job is replied with BDERR_TIMEOUT and what waited for the channel goes on. The resolution is a tick. (The time is read with the
-    interrupts off, so that a slice that starts meanwhile is not taken for a late one.)
+/* The watchdog: a vertical blank server, 50 or 60 times a second.
+   A slice that has been on its channel longer than the BDJ_Timeout
+   of its job is given up: the channel is stopped, the job is replied
+   with BDERR_TIMEOUT and what waited for the channel goes on.
+   The resolution is a tick. (The time is read with the interrupts off,
+   so that a slice that starts meanwhile is not taken for a late one.)
 */
-static ULONG Tick(REGARG(struct BDMABase *BDMABase, "a1"))
+static ULONG Tick(
+    REGARG(struct BDMABase *BDMABase, "a1"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     BOOL again = FALSE;
@@ -304,7 +385,8 @@ static ULONG Tick(REGARG(struct BDMABase *BDMABase, "a1"))
         Disable();
         job = channel->bc_Job;
 
-        if (job != NULL && job->bj_State == BJS_RUNNING && !job->bj_Test && job->bj_Request.bdr_Timeout != 0 &&
+        if (job != NULL && job->bj_State == BJS_RUNNING && 
+            !job->bj_Test && job->bj_Request.bdr_Timeout != 0 &&
             timer_now() - job->bj_Start > job->bj_Request.bdr_Timeout)
         {
             BDMA_StopChannel(channel);
@@ -319,33 +401,53 @@ static ULONG Tick(REGARG(struct BDMABase *BDMABase, "a1"))
             again = TRUE;
         }
         else
+        {
             Enable();
+        }
     }
 
     if (again)
+    {
         BDMA_Run(BDMABase);
+    }
 
     return 0;
 }
 
-/* A job that has slices left goes back to the queue where its order of submission puts it: the queue is in that order, which is what lets a job
-   see the older ones that it must wait for (footprints). Called by the interrupt. */
-static void Requeue(struct BDMABase *BDMABase, struct BDMAJob *job)
+/* A job that has slices left goes back to the queue where its order of submission puts it:
+   the queue is in that order, which is what lets a job see the older ones that it must wait
+   for (footprints). Called by the interrupt.
+*/
+static VOID Requeue(
+    struct BDMABase *BDMABase, 
+    struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAJob *o;
 
     job->bj_State = BJS_QUEUED;
 
-    for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); o->bj_Node.mln_Succ != NULL; o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
+    for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
+         o->bj_Node.mln_Succ != NULL; 
+         o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
+    {
         if (o->bj_Sequence > job->bj_Sequence)
+        {
             break;
+        }
+    }
 
-    Insert((struct List *)&BDMABase->bdb_Queue, BDMA_JOBNODE(job), (struct Node *)o->bj_Node.mln_Pred);
+    Insert((struct List *)&BDMABase->bdb_Queue, 
+        BDMA_JOBNODE(job), (struct Node *)o->bj_Node.mln_Pred);
 }
 
-/* The end of a job: statistics, then the software interrupt takes over (cache, reply to the port) */
-static void Finish(struct BDMABase *BDMABase, struct BDMAJob *job, LONG error)
+/* The end of a job: statistics,
+   then the software interrupt takes over (cache, reply to the port)
+*/
+static VOID Finish(
+    struct BDMABase *BDMABase, 
+    struct BDMAJob *job, 
+    LONG error)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     const struct BDMARequest *r = &job->bj_Request;
@@ -365,33 +467,39 @@ static void Finish(struct BDMABase *BDMABase, struct BDMAJob *job, LONG error)
             BDMABase->bdb_ByteRemainder &= (1UL << 20) - 1;
         }
         else
+        {
             BDMABase->bdb_Failures++;
+        }
 
         job->bj_Done = error == BDERR_OK ? r->bdr_Length * r->bdr_Rows : 0;
         cached = error == BDERR_OK && !(r->bdr_Given & BDRF_NOCACHE) && !BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi);
 
         if (cached && job->bj_WriteHi - job->bj_WriteLo > BDMA_LINEWISE_MAX)
         {
-            /* a big job: the call of the system for the cache is not for an interrupt, a software interrupt does it and replies. (It is not used for a small
-               job: Cause() costs about 60 us under Emu68, the lines of a small area less than one.) */
+            /* a big job: the call of the system for the cache is not for an interrupt,
+               a software interrupt does it and replies. (It is not used for a small job:
+               Cause() costs about 60 us under Emu68, the lines of a small area less than one.) */
             AddTail((struct List *)&BDMABase->bdb_Done, BDMA_JOBNODE(job));
             Cause(&BDMABase->bdb_DoneInt);
         }
         else
         {
             if (cached)
+            {
                 BDMA_DropLines(job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo);
+            }
 
             BDMA_ReplyJob(BDMABase, job);
         }
     }
 }
 
-/*
-    Called by gic400.library at the interrupt of a channel, as a subroutine, with the channel in a1 (the is_Data of the interrupt): it
-    acknowledges (level triggered: an interrupt that is not acknowledged is a storm), ends the job, and starts the next ones.
+/* Called by gic400.library at the interrupt of a channel, as a subroutine, with the 
+   channel in a1 (the is_Data of the interrupt): it acknowledges (level triggered: an 
+   interrupt that is not acknowledged is a storm), ends the job, and starts the next ones.
 */
-static ULONG Interrupt(REGARG(struct BDMAChannel *channel, "a1"))
+static ULONG Interrupt(
+    REGARG(struct BDMAChannel *channel, "a1"))
 {
     struct BDMABase *BDMABase = channel->bc_Base;
     struct BDMAJob *job;
@@ -400,9 +508,12 @@ static ULONG Interrupt(REGARG(struct BDMAChannel *channel, "a1"))
     channel->bc_Calls++;
 
     if ((cs & CS_INT) == 0)
+    {
         return 0;
+    }
 
-    dma_wr(channel->bc_Number, DMA_CS, CS_INT | CS_END | CS_PROT);     /* writing 1 clears them */
+    /* writing 1 clears them */
+    dma_wr(channel->bc_Number, DMA_CS, CS_INT | CS_END | CS_PROT);
 
     job = channel->bc_Job;
     channel->bc_Job = NULL;
@@ -410,9 +521,14 @@ static ULONG Interrupt(REGARG(struct BDMAChannel *channel, "a1"))
     if (job != NULL)
     {
         if (!(cs & CS_ERROR) && job->bj_Unit < job->bj_Units)
-            Requeue(BDMABase, job);         /* another slice: the job waits its turn again, a more urgent one may go first */
+        {
+            /* another slice: the job waits its turn again, a more urgent one may go first */
+            Requeue(BDMABase, job);
+        }
         else
+        {
             Finish(BDMABase, job, (cs & CS_ERROR) ? BDERR_HW : BDERR_OK);
+        }
     }
 
     /* a job that waited for this one, or for the channel */
@@ -424,7 +540,9 @@ static ULONG Interrupt(REGARG(struct BDMAChannel *channel, "a1"))
         idle = Pick(BDMABase, &next);
 
         if (idle == NULL)
+        {
             break;
+        }
 
         StartChain(BDMABase, idle, next);
     }
@@ -432,8 +550,13 @@ static ULONG Interrupt(REGARG(struct BDMAChannel *channel, "a1"))
     return 0;
 }
 
-/* The self test of a channel: 4 KB through the real path, polled, must arrive intact and raise the interrupt of the channel */
-static ULONG SelfTest(struct BDMABase *BDMABase, struct BDMAChannel *channel, UBYTE *scratch)
+/* The self test of a channel: 4 KB through the real path, polled, 
+   must arrive intact and raise the interrupt of the channel
+*/
+static ULONG SelfTest(
+    struct BDMABase *BDMABase, 
+    struct BDMAChannel *channel, 
+    UBYTE *scratch)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAJob job;
@@ -449,7 +572,9 @@ static ULONG SelfTest(struct BDMABase *BDMABase, struct BDMAChannel *channel, UB
     CacheClearE(scratch, 2 * SELFTEST_SIZE, CACRF_ClearD);
 
     for (i = 0; i < sizeof(job); i++)
+    {
         ((UBYTE *)&job)[i] = 0;
+    }
 
     job.bj_Test = 1;
     job.bj_Request.bdr_Given = BDRF_SRC | BDRF_DST | BDRF_LENGTH;
@@ -468,8 +593,7 @@ static ULONG SelfTest(struct BDMABase *BDMABase, struct BDMAChannel *channel, UB
     StartChain(BDMABase, channel, &job);
 
     t0 = timer_now();
-    while (job.bj_State < BJS_DONE && timer_now() - t0 < 50000)
-        ;
+    while (job.bj_State < BJS_DONE && timer_now() - t0 < 50000);
 
     if (job.bj_State != BJS_DONE)
     {
@@ -491,18 +615,24 @@ static ULONG SelfTest(struct BDMABase *BDMABase, struct BDMAChannel *channel, UB
         CacheClearE(scratch, 2 * SELFTEST_SIZE, CACRF_ClearD);
 
         for (i = 0; i < SELFTEST_SIZE; i++)
+        {
             if (scratch[SELFTEST_SIZE + i] != (UBYTE)(i * 7 + 3))
             {
                 why = BCW_DATA;
                 break;
             }
+        }
     }
 
     return why;
 }
 
-/* What the device tree says about the DMA of the machine: the model, the channels and the interrupts. FALSE: no engine here. */
-static BOOL ReadDeviceTree(struct BDMABase *BDMABase, ULONG *interrupts)
+/* What the device tree says about the DMA of the machine: the model, 
+   the channels and the interrupts. FALSE: no engine here.
+*/
+static BOOL ReadDeviceTree(
+    struct BDMABase *BDMABase, 
+    ULONG *interrupts)
 {
     APTR DeviceTreeBase = BDMABase->bdb_DeviceTreeBase;
     struct Library *UtilityBase = BDMABase->bdb_UtilityBase;
@@ -537,7 +667,9 @@ static BOOL ReadDeviceTree(struct BDMABase *BDMABase, ULONG *interrupts)
 
             prop = DT_FindProperty(key, "brcm,dma-channel-mask");
             if (prop != NULL && DT_GetPropLen(prop) >= sizeof(ULONG))
+            {
                 BDMABase->bdb_ChannelMask = *(const ULONG *)DT_GetPropValue(prop);
+            }
 
             /* the interrupts of the channels 11 ...: three cells each (type, number, flags); a SPI (type 0) has the GIC id number + 32 */
             prop = DT_FindProperty(key, "interrupts");
@@ -547,8 +679,12 @@ static BOOL ReadDeviceTree(struct BDMABase *BDMABase, ULONG *interrupts)
                 ULONG count = DT_GetPropLen(prop) / (3 * sizeof(ULONG)), i;
 
                 for (i = 0; i < count && i <= LAST_40BIT_CHANNEL - FIRST_40BIT_CHANNEL; i++)
+                {
                     if (cells[3 * i] == 0)
+                    {
                         interrupts[i] = cells[3 * i + 1] + 32;
+                    }
+                }
             }
 
             found = TRUE;
@@ -570,13 +706,13 @@ static BOOL ReadDeviceTree(struct BDMABase *BDMABase, ULONG *interrupts)
     return found;
 }
 
-/*
-    Starts the engine. Called by a task, under the semaphore of the base, at the first call that needs it. Everything is checked and the
-    engine stays unavailable (the clients stay on the CPU) when something is missing: the model, a free channel that is not the
-    firmware's, its interrupt, gic400.library 1.3 or later, memory for the control blocks, and a 4 KB copy that must arrive intact
-    and raise exactly the interrupt of its channel.
+/* Starts the engine. Called by a task, under the semaphore of the base, at the first call that needs it.
+   Everything is checked and the engine stays unavailable (the clients stay on the CPU) when something is 
+   missing: the model, a free channel that is not the firmware's, its interrupt, gic400.library 1.3 or later, 
+   memory for the control blocks, and a 4 KB copy that must arrive intact and raise exactly the interrupt of its channel.
 */
-BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
+BOOL BDMA_StartEngine(
+    struct BDMABase *BDMABase)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     APTR DeviceTreeBase;
@@ -587,7 +723,9 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
     UBYTE *scratch;
 
     if (BDMABase->bdb_State != BES_NOTSTARTED)
+    {
         return BDMABase->bdb_State == BES_RUNNING;
+    }
 
     BDMABase->bdb_State = BES_FAILED;
 
@@ -608,25 +746,36 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
         return FALSE;
     }
 
-    /* the channels: the device tree mask, as far as the firmware agrees, 40 bit ones only, never the firmware's own (DISDEBUG) */
+    /* the channels: the device tree mask, as far as the firmware agrees, 
+       40 bit ones only, never the firmware's own (DISDEBUG) */
     mask = BDMABase->bdb_ChannelMask;
     firmware = GetDMAChannels(MailboxBase);
     BDMABase->bdb_Firmware = firmware;
+    
     if (firmware != 0 && firmware != 0xffffffffUL)
+    {
         mask &= firmware;
+    }
 
     BDMABase->bdb_Channels = 0;
-    for (number = FIRST_40BIT_CHANNEL; number <= LAST_40BIT_CHANNEL && BDMABase->bdb_Channels < BDMA_MAX_CHANNELS; number++)
+    
+    for (number = FIRST_40BIT_CHANNEL; 
+        number <= LAST_40BIT_CHANNEL && BDMABase->bdb_Channels < BDMA_MAX_CHANNELS; 
+        number++)
     {
         ULONG irq = interrupts[number - FIRST_40BIT_CHANNEL];
         ULONG cs;
 
         if ((mask & (1UL << number)) == 0 || irq == 0)
+        {
             continue;
+        }
 
         cs = dma_rd(number, DMA_CS);
         if (cs & CS_DISDEBUG)
+        {
             continue;
+        }
 
         BDMABase->bdb_Channel[BDMABase->bdb_Channels].bc_Number = number;
         BDMABase->bdb_Channel[BDMABase->bdb_Channels].bc_Interruptid = irq;
@@ -648,15 +797,22 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
     }
 
     if (BDMABase->bdb_GicBase->lib_Version < GIC_MIN_VERSION ||
-        (BDMABase->bdb_GicBase->lib_Version == GIC_MIN_VERSION && BDMABase->bdb_GicBase->lib_Revision < GIC_MIN_REVISION))
+        (BDMABase->bdb_GicBase->lib_Version == GIC_MIN_VERSION && 
+        BDMABase->bdb_GicBase->lib_Revision < GIC_MIN_REVISION))
     {
         BDMABase->bdb_Reason = BDW_GICOLD;
         return FALSE;
     }
 
-    /* The control blocks of each channel, the 256 byte constant of each, and 2 x 4 KB for the self test: coherent memory of the GPU, 32 byte aligned */
+    /* The control blocks of each channel, the 256 byte constant of each, 
+       and 2 x 4 KB for the self test: coherent memory of the GPU, 32 byte aligned */
     size = BDMABase->bdb_Channels * (BDMA_CHAIN_SIZE + CONSTANT_SIZE) + 2 * SELFTEST_SIZE;
-    BDMABase->bdb_Handle = AllocateMemory(MailboxBase, size, 32, MEM_FLAG_COHERENT | MEM_FLAG_DIRECT | MEM_FLAG_HINT_PERMALOCK);
+    
+    BDMABase->bdb_Handle = AllocateMemory(MailboxBase, size, 32, 
+        MEM_FLAG_COHERENT | 
+        MEM_FLAG_DIRECT | 
+        MEM_FLAG_HINT_PERMALOCK);
+    
     if (BDMABase->bdb_Handle == 0 || BDMABase->bdb_Handle == 0xffffffffUL)
     {
         BDMABase->bdb_Handle = 0;
@@ -675,13 +831,15 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
     phys = bus & 0x3fffffffUL;
     scratch = (UBYTE *)(phys + BDMABase->bdb_Channels * (BDMA_CHAIN_SIZE + CONSTANT_SIZE));
 
-    /* NewList() is in amiga.lib, which the resource does not link */
+    /* NewList() */
     BDMABase->bdb_Queue.mlh_Head = (struct MinNode *)&BDMABase->bdb_Queue.mlh_Tail;
     BDMABase->bdb_Queue.mlh_Tail = NULL;
     BDMABase->bdb_Queue.mlh_TailPred = (struct MinNode *)&BDMABase->bdb_Queue.mlh_Head;
 
-    /* The sweep (the OS restarted, the Pi did not: a channel can still run what the session before gave it) and the interrupts. An id left
-       enabled by that session is not a user: AddIntServerEx() refuses when a handler is registered, so its state is not looked at. */
+    /* The sweep (the OS restarted, the Pi did not:
+       a channel can still run what the session before gave it) and the interrupts.
+       An id left enabled by that session is not a user: AddIntServerEx() refuses 
+       when a handler is registered, so its state is not looked at. */
     for (i = 0; i < BDMABase->bdb_Channels; i++)
     {
         struct BDMAChannel *channel = &BDMABase->bdb_Channel[i];
@@ -700,6 +858,7 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
         channel->bc_Interrupt.is_Code = (void (*)())Interrupt;
 
         channel->bc_Error = AddIntServerEx(channel->bc_Interruptid, 0, FALSE, &channel->bc_Interrupt);
+        
         if (channel->bc_Error == 0)
         {
             channel->bc_Registered = TRUE;
@@ -712,13 +871,20 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
             }
         }
         else
+        {
             channel->bc_Why = BCW_ADDINT;
+        }
     }
 
-    /* the channels that did not prove themselves are not used; the others stay, in the order of the table */
+    /* the channels that did not prove themselves are not used;
+       the others stay, in the order of the table */
     for (i = 0; i < BDMABase->bdb_Channels; i++)
+    {
         if (BDMABase->bdb_Channel[i].bc_Registered)
+        {
             break;
+        }
+    }
 
     if (i == BDMABase->bdb_Channels)
     {
@@ -729,7 +895,7 @@ BOOL BDMA_StartEngine(struct BDMABase *BDMABase)
 
     BDMABase->bdb_Features = BDFF_RECT | BDFF_MOVE | BDFF_WIDE | BDFF_FILL;
     BDMABase->bdb_State = BES_RUNNING;
-    BDMABase->bdb_Classes = BDCLASS_DMA40;            /* every channel it manages is a 40 bit one: the other classes come with their backend */
+    BDMABase->bdb_Classes = BDCLASS_DMA40; /* every channel it manages is a 40 bit one: the other classes come with their backend */
 
     /* the watchdog of BDJ_Timeout */
     BDMABase->bdb_TickInt.is_Node.ln_Type = NT_INTERRUPT;

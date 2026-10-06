@@ -82,7 +82,8 @@
 #define BDRF_CLASSES     (1 << 11)
 
 /* A job as the tags describe it, once parsed and checked. */
-struct BDMARequest {
+struct BDMARequest
+{
     ULONG           bdr_Given;       /* BDRF_* */
     ULONG           bdr_Src;
     ULONG           bdr_Dst;
@@ -104,7 +105,8 @@ struct BDMARequest {
 #include <resources/brcm-dma.h>
 
 /* A client: what BDMA_OpenClientTagList() gives back until BDMA_CloseClient() */
-struct BDMAClient {
+struct BDMAClient
+{
     struct Node             bcl_Node;           /* ln_Name is bcl_Name */
     struct BDMABase *       bcl_Base;
     struct MsgPort *        bcl_Port;           /* the default reply port of its jobs */
@@ -115,7 +117,8 @@ struct BDMAClient {
 };
 
 /* What the engine knows about itself, for BDMA_QueryInfoTagList() */
-struct BDMAStatus {
+struct BDMAStatus
+{
     ULONG           bds_Available;
     ULONG           bds_Version;
     ULONG           bds_Interrupt;
@@ -136,7 +139,8 @@ struct BDMABase;
 
 
 /* One of the channels of the pool */
-struct BDMAChannel {
+struct BDMAChannel
+{
     struct BDMABase *   bc_Base;
     struct Interrupt    bc_Interrupt;       /* is_Data is this structure */
     struct BDMAJob *    bc_Job;             /* the job it runs, NULL when idle */
@@ -153,7 +157,8 @@ struct BDMAChannel {
     ULONG               bc_TestCopied;
 };
 
-struct BDMABase {
+struct BDMABase
+{
     struct Library          bdb_Node;
     struct ExecBase *       bdb_ExecBase;
     struct SignalSemaphore  bdb_Lock;
@@ -210,19 +215,19 @@ ULONG BDMA_FillQuery(struct Library *UtilityBase, const struct TagItem *tags, co
 
 /* The jobs (job.c) */
 LONG BDMA_CheckRequest(struct BDMABase *BDMABase, struct BDMAJob *job);
-void BDMA_ReplyJob(struct BDMABase *BDMABase, struct BDMAJob *job);
-void BDMA_AbortInternal(struct BDMABase *BDMABase, struct BDMAJob *job);
-void BDMA_Release(struct BDMABase *BDMABase, struct BDMAJob *job);
+VOID BDMA_ReplyJob(struct BDMABase *BDMABase, struct BDMAJob *job);
+VOID BDMA_AbortInternal(struct BDMABase *BDMABase, struct BDMAJob *job);
+VOID BDMA_Release(struct BDMABase *BDMABase, struct BDMAJob *job);
 ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"));
 
 /* The engine (engine.c) */
 BOOL BDMA_StartEngine(struct BDMABase *BDMABase);
-void BDMA_Run(struct BDMABase *BDMABase);
-void BDMA_StopChannel(struct BDMAChannel *channel);
+VOID BDMA_Run(struct BDMABase *BDMABase);
+VOID BDMA_StopChannel(struct BDMAChannel *channel);
 BOOL BDMA_InMemory(struct BDMABase *BDMABase, ULONG address, ULONG bytes);
 BOOL BDMA_InVideoMemory(struct BDMABase *BDMABase, ULONG lo, ULONG hi);
 
-void kprintf(REGARG(const char * msg, "a0"), REGARG(void * args, "a1"));
+VOID kprintf(REGARG(const char * msg, "a0"), REGARG(VOID * args, "a1"));
 
 #define bug(string, ...) \
     do { ULONG args[] = {0, __VA_ARGS__}; kprintf(string, &args[1]); } while(0)

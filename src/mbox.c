@@ -14,33 +14,29 @@
 
 #include "mbox.h"
 
-/*
-    MB_RawCommand() of proto/mailbox.h (the SFD of this build has this one function: LVO -6, the buffer in a0). The buffer is the one of the
-    property interface, in big endian (the resource swaps it in and out), with at most 480 words. When the call failed the first word comes
-    back as 0xffffffff; the second one is the answer code of the firmware.
-*/
 static BOOL RawCommand(struct Library *MailboxBase, ULONG *command)
 {
     MB_RawCommand(command);
 
-    return command[0] != 0xffffffffUL && command[1] == MB_SUCCESS;
+    return ((command[0] != 0xffffffffUL) && (command[1] == MB_SUCCESS));
 }
 
-/* A request with one tag, one word in and one word out; the answer is in *value */
-static BOOL OneValue(struct Library *MailboxBase, ULONG tag, ULONG *value)
+static BOOL RawCommandOneValue(struct Library *MailboxBase, ULONG tag, ULONG *value)
 {
     ULONG buffer[7];
 
-    buffer[0] = sizeof(buffer);     /* length */
-    buffer[1] = 0;                  /* request */
+    buffer[0] = sizeof(buffer);
+    buffer[1] = 0;
     buffer[2] = tag;
-    buffer[3] = 4;                  /* size of the value buffer */
-    buffer[4] = 0;                  /* request / response code of the tag */
+    buffer[3] = 4;
+    buffer[4] = 0;
     buffer[5] = *value;
-    buffer[6] = 0;                  /* end tag */
+    buffer[6] = 0;
 
     if (!RawCommand(MailboxBase, buffer))
+    {
         return FALSE;
+    }
 
     *value = buffer[5];
 
@@ -51,8 +47,10 @@ ULONG GetDMAChannels(struct Library *MailboxBase)
 {
     ULONG mask = 0;
 
-    if (!OneValue(MailboxBase, MB_GET_DMA_CHANNELS, &mask))
+    if (!RawCommandOneValue(MailboxBase, MB_GET_DMA_CHANNELS, &mask))
+    {
         return 0;
+    }
 
     return mask;
 }
@@ -72,31 +70,39 @@ ULONG AllocateMemory(struct Library *MailboxBase, ULONG size, ULONG alignment, U
     buffer[8] = 0;
 
     if (!RawCommand(MailboxBase, buffer))
+    {
         return 0xffffffffUL;
+    }
 
     return buffer[5];
 }
 
+ULONG ReleaseMemory(struct Library *MailboxBase, ULONG handle)
+{
+    if (!RawCommandOneValue(MailboxBase, MB_RELEASE_MEMORY, &handle))
+    {
+        return 0xffffffffUL;
+    }
+
+    return handle;
+}
+
 ULONG LockMemory(struct Library *MailboxBase, ULONG handle)
 {
-    if (!OneValue(MailboxBase, MB_LOCK_MEMORY, &handle))
+    if (!RawCommandOneValue(MailboxBase, MB_LOCK_MEMORY, &handle))
+    {
         return 0;
+    }
 
     return handle;
 }
 
 ULONG UnlockMemory(struct Library *MailboxBase, ULONG handle)
 {
-    if (!OneValue(MailboxBase, MB_UNLOCK_MEMORY, &handle))
+    if (!RawCommandOneValue(MailboxBase, MB_UNLOCK_MEMORY, &handle))
+    {
         return 0xffffffffUL;
-
-    return handle;
-}
-
-ULONG ReleaseMemory(struct Library *MailboxBase, ULONG handle)
-{
-    if (!OneValue(MailboxBase, MB_RELEASE_MEMORY, &handle))
-        return 0xffffffffUL;
+    }
 
     return handle;
 }

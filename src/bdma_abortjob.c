@@ -15,16 +15,20 @@
 
 #include "brcm-dma.h"
 
-/*
-    As AbortIO() does for a request: stops the job, in the queue or on its channel, and replies it to its port with BDERR_ABORTED. A job that is over is left
-    alone. A job from BDMA_AddJobTagList() that was replied is taken off the port and freed here.
+/* As AbortIO() does for a request: stops the job, in the queue or on its channel,
+    and replies it to its port with BDERR_ABORTED. A job that is over is left alone.
+    A job from BDMA_AddJobTagList() that was replied is taken off the port and freed here.
 */
-VOID L_BDMA_AbortJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *BDMABase, "a6"))
+VOID L_BDMA_AbortJob(
+    REGARG(struct BDMAJob *job, "a0"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
 
     if (job == NULL)
+    {
         return;
+    }
 
     BDMA_AbortInternal(BDMABase, job);
 

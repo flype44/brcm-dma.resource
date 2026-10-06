@@ -16,11 +16,15 @@
 
 #include "brcm-dma.h"
 
-/*
-    Describes a job: the tags are parsed and checked once, here, in a task context. The job belongs to the client until BDMA_FreeJob(); BDMA_StartJob()
-    queues it, as many times as wanted (BDMA_SetJobTagList() changes it between two). The engine starts here, at the first job (never in Init()).
+/* Describes a job: the tags are parsed and checked once, here, in a task context.
+   The job belongs to the client until BDMA_FreeJob(); BDMA_StartJob() queues it,
+   as many times as wanted (BDMA_SetJobTagList() changes it between two).
+   The engine starts here, at the first job (never in Init()).
 */
-struct BDMAJob * L_BDMA_AllocJobTagList(REGARG(struct BDMAClient *client, "a0"), REGARG(const struct TagItem *tagList, "a1"), REGARG(struct BDMABase *BDMABase, "a6"))
+struct BDMAJob * L_BDMA_AllocJobTagList(
+    REGARG(struct BDMAClient *client, "a0"), 
+    REGARG(const struct TagItem *tagList, "a1"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct Library *UtilityBase = BDMA_OpenUtility(BDMABase);
@@ -50,7 +54,9 @@ struct BDMAJob * L_BDMA_AllocJobTagList(REGARG(struct BDMAClient *client, "a0"),
             job = AllocVec(sizeof(struct BDMAJob), MEMF_PUBLIC | MEMF_CLEAR);
 
             if (job == NULL)
+            {
                 error = BDERR_BUSY;
+            }
             else
             {
                 job->bj_Request = request;
@@ -75,7 +81,9 @@ struct BDMAJob * L_BDMA_AllocJobTagList(REGARG(struct BDMAClient *client, "a0"),
     }
 
     if (request.bdr_ErrorCode != NULL)
+    {
         *request.bdr_ErrorCode = error;
+    }
 
     return job;
 }

@@ -16,9 +16,15 @@
 
 #include "brcm-dma.h"
 
-/* What a job can say about itself, as GetDTAttrs() does: each tag names a value, the ULONG * that goes with it receives it; the number of answers is returned.
-   A tag that this version does not know is skipped and its place left alone. */
-ULONG L_BDMA_QueryJobTagList(REGARG(struct BDMAJob *job, "a0"), REGARG(const struct TagItem *tagList, "a1"), REGARG(struct BDMABase *BDMABase, "a6"))
+/* What a job can say about itself, as GetDTAttrs() does:
+   each tag names a value, the ULONG * that goes with it receives it;
+   the number of answers is returned. A tag that this version does not 
+   know is skipped and its place left alone.
+*/
+ULONG L_BDMA_QueryJobTagList(
+    REGARG(struct BDMAJob *job, "a0"), 
+    REGARG(const struct TagItem *tagList, "a1"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct Library *UtilityBase = BDMA_OpenUtility(BDMABase);
     struct TagItem *t;
@@ -26,7 +32,9 @@ ULONG L_BDMA_QueryJobTagList(REGARG(struct BDMAJob *job, "a0"), REGARG(const str
     ULONG answered = 0;
 
     if (job == NULL || UtilityBase == NULL)
+    {
         return 0;
+    }
 
     while ((t = NextTagItem((struct TagItem **)&list)) != NULL)
     {
@@ -38,7 +46,7 @@ ULONG L_BDMA_QueryJobTagList(REGARG(struct BDMAJob *job, "a0"), REGARG(const str
             case BDJI_State:     value = job->bj_State; break;
             case BDJI_Error:     value = job->bj_State < BJS_DONE ? BDERR_OK : (ULONG)job->bj_Error; break;
             case BDJI_BytesDone: value = job->bj_Done; break;
-            default:             continue;
+            default: continue;
         }
 
         if (to != NULL)

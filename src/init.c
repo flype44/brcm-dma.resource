@@ -23,10 +23,6 @@ extern UBYTE rom_end;
 extern const char deviceName[];
 extern const char deviceIdString[];
 
-/*
-    The skeleton: it checks that devicetree.resource is there (every later step reads the model of the Pi from it),
-    makes the base and adds the resource. Every function answers BDERR_UNAVAILABLE: the engine comes in the next steps.
-*/
 APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
 {
     struct BDMABase *BDMABase = NULL;
@@ -35,13 +31,12 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
 
     APTR base_pointer = NULL;
 
-
     ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library", 0);
     GetCurrentBinding(&binding, sizeof(binding));
 
-
-    base_pointer = AllocMem(BASE_NEG_SIZE + BASE_POS_SIZE, MEMF_PUBLIC | MEMF_CLEAR);
-
+    base_pointer = AllocMem(
+        BASE_NEG_SIZE + BASE_POS_SIZE, 
+        MEMF_PUBLIC | MEMF_CLEAR);
 
     bug("[brcm-dma] Init\n");
 
@@ -64,8 +59,8 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
         relFuncTable[NUMBER_OF_FUNCTIONS] = (ULONG)-1;
 
         BDMABase = (struct BDMABase *)((UBYTE *)base_pointer + BASE_NEG_SIZE);
+        
         MakeFunctions(BDMABase, relFuncTable, 0);
-
 
         BDMABase->bdb_Node.lib_Node.ln_Type = NT_RESOURCE;
         BDMABase->bdb_Node.lib_Node.ln_Pri = BDMA_PRIORITY;
@@ -81,7 +76,7 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
 
         InitSemaphore(&BDMABase->bdb_Lock);
 
-        /* NewList() is in amiga.lib, which the resource does not link */
+        /* NewList() */
         BDMABase->bdb_Clients.mlh_Head = (struct MinNode *)&BDMABase->bdb_Clients.mlh_Tail;
         BDMABase->bdb_Clients.mlh_Tail = NULL;
         BDMABase->bdb_Clients.mlh_TailPred = (struct MinNode *)&BDMABase->bdb_Clients.mlh_Head;
@@ -96,20 +91,16 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
         BDMABase->bdb_DoneInt.is_Data = BDMABase;
         BDMABase->bdb_DoneInt.is_Code = (void (*)())BDMA_DoneCode;
 
-
         if (OpenResource("devicetree.resource") != NULL)
         {
-
             SumLibrary((struct Library*)BDMABase);
             AddResource(BDMABase);
-
 
             if (binding.cb_ConfigDev != NULL)
             {
                 binding.cb_ConfigDev->cd_Flags &= ~CDF_CONFIGME;
                 binding.cb_ConfigDev->cd_Driver = BDMABase;
             }
-
         }
         else
         {
@@ -119,8 +110,6 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
     }
 
     CloseLibrary((struct Library*)ExpansionBase);
-
-
     return BDMABase;
 }
 

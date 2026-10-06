@@ -17,10 +17,17 @@
 #include "brcm-dma.h"
 #include "cache.h"
 
-/* The data cache is not coherent with the DMA: write back what the CPU wrote and drop the lines before the transfer (the software interrupt that replies
-   drops them again after it). A small area line by line, a big one by the call of the system (CachePreDMA() gives back the length of the contiguous piece
-   it handled: loop until the area is done). */
-static void CachePre(struct ExecBase *SysBase, ULONG address, ULONG bytes, ULONG flags)
+/* The data cache is not coherent with the DMA:
+   write back what the CPU wrote and drop the lines before the transfer
+   (the software interrupt that replies drops them again after it).
+   A small area line by line, a big one by the call of the system (CachePreDMA() 
+   gives back the length of the contiguous piece it handled: loop until the area is done).
+*/
+static VOID CachePre(
+    struct ExecBase *SysBase, 
+    ULONG address, 
+    ULONG bytes, 
+    ULONG flags)
 {
     ULONG first = 1;
 
@@ -38,26 +45,32 @@ static void CachePre(struct ExecBase *SysBase, ULONG address, ULONG bytes, ULONG
         first = 0;
 
         if (l <= 0 || (ULONG)l > bytes)
+        {
             break;
+        }
 
         address += l;
         bytes -= l;
     }
 }
 
-/*
-    Queues the job, which was described by BDMA_AllocJobTagList(): no allocation and no parsing here, so a software interrupt may call it (the next block
-    of a transfer, for instance). The job is replied to its port when it is over. With BDJ_NoWait and every channel busy it is replied at once, with BDERR_BUSY.
-    A job that is in flight is left alone.
+/* Queues the job, which was described by BDMA_AllocJobTagList():
+   no allocation and no parsing here, so a software interrupt may call it (the next block
+   of a transfer, for instance). The job is replied to its port when it is over. With BDJ_NoWait and every channel busy it is replied at once, with BDERR_BUSY.
+   A job that is in flight is left alone.
 */
-VOID L_BDMA_StartJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *BDMABase, "a6"))
+VOID L_BDMA_StartJob(
+    REGARG(struct BDMAJob *job, "a0"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     const struct BDMARequest *r;
     struct MsgPort *port;
 
     if (job == NULL || job->bj_State < BJS_DONE)
+    {
         return;
+    }
 
     r = &job->bj_Request;
     port = r->bdr_ReplyPort != NULL ? r->bdr_ReplyPort : job->bj_Client->bcl_Port;
@@ -81,8 +94,12 @@ VOID L_BDMA_StartJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *
 
         Disable();
         for (i = 0; i < BDMABase->bdb_Channels; i++)
+        {
             if (BDMABase->bdb_Channel[i].bc_Job == NULL && BDMABase->bdb_Channel[i].bc_Registered)
+            {
                 idle = TRUE;
+            }
+        }
         Enable();
 
         if (!idle)
@@ -98,10 +115,14 @@ VOID L_BDMA_StartJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *
     {
         /* the memory of the RTG board is not cached by the CPU */
         if (!(r->bdr_Given & BDRF_FILL) && !BDMA_InVideoMemory(BDMABase, job->bj_ReadLo, job->bj_ReadHi))
+        {
             CachePre(SysBase, job->bj_ReadLo, job->bj_ReadHi - job->bj_ReadLo, DMA_ReadFromRAM);
+        }
 
         if (!BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi))
+        {
             CachePre(SysBase, job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo, 0);
+        }
     }
 
     Disable();

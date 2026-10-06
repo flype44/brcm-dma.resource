@@ -7,9 +7,10 @@
     with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 */
 
-/*
-    The resource's own part of struct BDMAJob: included by <resources/brcm-dma.h> inside the structure, only when BDMA_PRIVATE is defined (src/brcm-dma.h
-    defines it). A client sees the message, the error and the bytes done, and nothing after them.
+/* The resource's own part of struct BDMAJob: included by 
+   <resources/brcm-dma.h> inside the structure, only when BDMA_PRIVATE is 
+   defined (src/brcm-dma.h defines it). A client sees the message, the error 
+   and the bytes done, and nothing after them.
 */
     struct MinNode      bj_Node;            /* in the queue, then in the list of the jobs that are over and wait for their reply */
     struct MinNode      bj_Link;            /* in the list of the jobs of the client */

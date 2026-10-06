@@ -13,8 +13,11 @@
 #include "hw-vc4.h"
 
 /*
-    VideoCore VI: what the BCM2711 (Pi 4B, 400, CM4) adds to the DMA engine of hw-vc4.h: the 40 bit channels 11 to 14 (DMA40), at the same
-    DMA_BASE + 0x100 * n (the node /scb/dma@7e007b00 of the device tree is the channel 11). The registers are named here and nowhere else.
+    VideoCore VI:
+	What the BCM2711 (Pi 4B, 400, CM4) adds to the DMA engine of hw-vc4.h:
+	the 40 bit channels 11 to 14 (DMA40), at the same DMA_BASE + 0x100 * n
+	(the node /scb/dma@7e007b00 of the device tree is the channel 11).
+	The registers are named here and nowhere else.
 */
 
 /* the DEBUG register of a 40 bit channel */

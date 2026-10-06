@@ -18,12 +18,16 @@
 
 #include "brcm-dma.h"
 
-/*
-    A session: it names the program for the tools, keeps the default reply port and priority of its jobs, and gives them back when it is closed.
-    Without BDC_ReplyPort the client makes a port of its own: it belongs to the task that opens the client, which is the only one that can sleep in
-    BDMA_WaitJob() for the jobs that use it. A task context (utility.library is opened here, and the port needs a signal).
+/* A session: it names the program for the tools, keeps the default reply port
+   and priority of its jobs, and gives them back when it is closed.
+   Without BDC_ReplyPort the client makes a port of its own:
+   it belongs to the task that opens the client, which is the only one that can
+   sleep in BDMA_WaitJob() for the jobs that use it. A task context
+   (utility.library is opened here, and the port needs a signal).
 */
-struct BDMAClient * L_BDMA_OpenClientTagList(REGARG(const struct TagItem *tagList, "a0"), REGARG(struct BDMABase *BDMABase, "a6"))
+struct BDMAClient * L_BDMA_OpenClientTagList(
+    REGARG(const struct TagItem *tagList, "a0"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct Library *UtilityBase = BDMA_OpenUtility(BDMABase);
@@ -47,14 +51,18 @@ struct BDMAClient * L_BDMA_OpenClientTagList(REGARG(const struct TagItem *tagLis
                 case BDC_ReplyPort: port = (struct MsgPort *)t->ti_Data; break;
                 case BDC_Priority:  priority = t->ti_Data; break;
                 case BDJ_ErrorCode: error_code = (ULONG *)t->ti_Data; break;
-                default:            break;
+                default: break;
             }
         }
 
         if (priority > BDPRI_HIGH)
+        {
             error = BDERR_ARGS;
+        }
         else if ((client = AllocVec(sizeof(struct BDMAClient), MEMF_PUBLIC | MEMF_CLEAR)) == NULL)
+        {
             error = BDERR_BUSY;
+        }
         else
         {
             ULONG i;
@@ -66,8 +74,12 @@ struct BDMAClient * L_BDMA_OpenClientTagList(REGARG(const struct TagItem *tagLis
             client->bcl_Jobs.mlh_TailPred = (struct MinNode *)&client->bcl_Jobs.mlh_Head;
 
             if (name != NULL)
+            {
                 for (i = 0; i < sizeof(client->bcl_Name) - 1 && name[i] != 0; i++)
+                {
                     client->bcl_Name[i] = name[i];
+                }
+            }
             client->bcl_Node.ln_Name = client->bcl_Name;
 
             if (port == NULL)
@@ -96,7 +108,9 @@ struct BDMAClient * L_BDMA_OpenClientTagList(REGARG(const struct TagItem *tagLis
     }
 
     if (error_code != NULL)
+    {
         *error_code = error;
+    }
 
     return client;
 }

@@ -15,11 +15,15 @@
 
 #include "brcm-dma.h"
 
-/*
-    The shortcut: BDMA_AllocJobTagList() and BDMA_StartJob() in one call, for a job that is used once. The job is freed by the BDMA_WaitJob() or the
-    BDMA_AbortJob() that ends it. A job that BDJ_NoWait refused is replied at once with BDERR_BUSY: BDMA_WaitJob() gives it.
+/* The shortcut: BDMA_AllocJobTagList() and BDMA_StartJob() in one call, for a 
+   job that is used once. The job is freed by the BDMA_WaitJob() or the BDMA_AbortJob() 
+   that ends it. A job that BDJ_NoWait refused is replied at once with BDERR_BUSY: 
+   BDMA_WaitJob() gives it.
 */
-struct BDMAJob * L_BDMA_AddJobTagList(REGARG(struct BDMAClient *client, "a0"), REGARG(const struct TagItem *tagList, "a1"), REGARG(struct BDMABase *BDMABase, "a6"))
+struct BDMAJob * L_BDMA_AddJobTagList(
+    REGARG(struct BDMAClient *client, "a0"), 
+    REGARG(const struct TagItem *tagList, "a1"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct BDMAJob *job = L_BDMA_AllocJobTagList(client, tagList, BDMABase);
 

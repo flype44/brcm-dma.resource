@@ -13,8 +13,13 @@
 
 #include "brcm-dma.h"
 
-/* As CheckIO() does for a request: TRUE when the job was replied to its port (or was never started), FALSE while it is in flight */
-BOOL L_BDMA_CheckJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *BDMABase, "a6"))
+/* As CheckIO() does for a request:
+   TRUE when the job was replied to its port (or was never started),
+   FALSE while it is in flight
+*/
+BOOL L_BDMA_CheckJob(
+    REGARG(struct BDMAJob *job, "a0"), 
+    REGARG(struct BDMABase *BDMABase, "a6"))
 {
     return job != NULL && (job->bj_State == BJS_IDLE || job->bj_Msg.mn_Node.ln_Type == NT_REPLYMSG);
 }

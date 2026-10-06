@@ -1,5 +1,5 @@
 /*
-    Copyright � 2025 Michal Schulz <michal.schulz@gmx.de>
+    Copyright @ 2025 Michal Schulz <michal.schulz@gmx.de>
     https://github.com/michalsc
 
     This Source Code Form is subject to the terms of the
@@ -16,8 +16,11 @@
 #include "brcm-dma.h"
 #include "cache.h"
 
-/* Checks what the tags could not know: the memory, the overlap, the sizes; fills the footprint of the job */
-LONG BDMA_CheckRequest(struct BDMABase *BDMABase, struct BDMAJob *job)
+/* Checks what the tags could not know: the memory, the overlap, the sizes;
+   fills the footprint of the job */
+LONG BDMA_CheckRequest(
+    struct BDMABase *BDMABase, 
+    struct BDMAJob *job)
 {
     const struct BDMARequest *r = &job->bj_Request;
     ULONG length = r->bdr_Length, rows = r->bdr_Rows;
@@ -26,17 +29,23 @@ LONG BDMA_CheckRequest(struct BDMABase *BDMABase, struct BDMAJob *job)
 
     /* no channel of the classes that the job allows */
     if (!(r->bdr_Classes & BDMABase->bdb_Classes))
+    {
         return BDERR_UNAVAILABLE;
+    }
 
     if (length > 0x3fffffffUL)
+    {
         return BDERR_TOOBIG;
+    }
 
     dstbytes = (rows - 1) * r->bdr_DstPitch + length;
     job->bj_WriteLo = r->bdr_Dst;
     job->bj_WriteHi = r->bdr_Dst + dstbytes;
 
     if (!BDMA_InMemory(BDMABase, r->bdr_Dst, dstbytes))
+    {
         return BDERR_RANGE;
+    }
 
     if (!fill)
     {
@@ -45,30 +54,41 @@ LONG BDMA_CheckRequest(struct BDMABase *BDMABase, struct BDMAJob *job)
         job->bj_ReadHi = r->bdr_Src + srcbytes;
 
         if (!BDMA_InMemory(BDMABase, r->bdr_Src, srcbytes))
+        {
             return BDERR_RANGE;
+        }
 
         if (r->bdr_Given & BDRF_MOVE)
         {
-            /* by whole rows only: a shift inside a row (less than the width) is refused, a scroll never does it */
+            /* by whole rows only:
+               a shift inside a row (less than the width) is refused, 
+               a scroll never does it */
             LONG gap = (LONG)r->bdr_Dst - (LONG)r->bdr_Src;
 
             if (gap > -(LONG)length && gap < (LONG)length)
+            {
                 return BDERR_OVERLAP;
+            }
 
             job->bj_Reverse = r->bdr_Dst > r->bdr_Src;
         }
         else if (job->bj_ReadLo < job->bj_WriteHi && job->bj_WriteLo < job->bj_ReadHi)
+        {
             return BDERR_OVERLAP;
+        }
     }
 
     return BDERR_OK;
 }
 
-/* The job goes back to its reply port: the message is replied, a task wakes or a software interrupt is caused */
-void BDMA_ReplyJob(struct BDMABase *BDMABase, struct BDMAJob *job)
+/* The job goes back to its reply port:
+   the message is replied, a task wakes or a software interrupt is caused
+*/
+void BDMA_ReplyJob(
+    struct BDMABase *BDMABase, 
+    struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
-
     struct Task *waiter;
 
     ReplyMsg(&job->bj_Msg);
@@ -76,11 +96,18 @@ void BDMA_ReplyJob(struct BDMABase *BDMABase, struct BDMAJob *job)
     /* a task that does not own the port sleeps on a signal of its own */
     waiter = job->bj_Waiter;
     if (waiter != NULL)
+    {
         Signal(waiter, job->bj_WaitMask);
+    }
 }
 
-/* Stops the job, in the queue or on its channel, and replies it with BDERR_ABORTED; a job that is over already is left alone */
-void BDMA_AbortInternal(struct BDMABase *BDMABase, struct BDMAJob *job)
+/* Stops the job, in the queue or on its channel,
+   and replies it with BDERR_ABORTED;
+   a job that is over already is left alone
+*/
+void BDMA_AbortInternal(
+    struct BDMABase *BDMABase, 
+    struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     BOOL aborted = FALSE;
@@ -119,12 +146,14 @@ void BDMA_AbortInternal(struct BDMABase *BDMABase, struct BDMAJob *job)
     }
 }
 
-/*
-    The software interrupt that Finish() causes: for each job that is over, the cache (what the DMA wrote is in the memory, not in the data cache; nothing
-    to do for the source, which the DMA only read), then the reply. A job of a few KB costs lines, a big one the call of the system: that is why it is not
-    done by the interrupt of the channel.
+/* The software interrupt that Finish() causes:
+   for each job that is over, the cache (what the DMA wrote is in the memory,
+   not in the data cache; nothing to do for the source, which the DMA only read),
+   then the reply. A job of a few KB costs lines, a big one the call of the system:
+   that is why it is not done by the interrupt of the channel.
 */
-ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"))
+ULONG BDMA_DoneCode(
+    REGARG(struct BDMABase *BDMABase, "a1"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
 
@@ -142,16 +171,19 @@ ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"))
 
         job = BDMA_NODEJOB(node);
 
-        if (job->bj_State == BJS_DONE && !(job->bj_Request.bdr_Given & BDRF_NOCACHE) && !BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi))
+        if (job->bj_State == BJS_DONE && 
+            !(job->bj_Request.bdr_Given & BDRF_NOCACHE) && 
+            !BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi))
         {
             ULONG bytes = job->bj_WriteHi - job->bj_WriteLo;
 
             if (bytes <= BDMA_LINEWISE_MAX)
+            {
                 BDMA_DropLines(job->bj_WriteLo, bytes);
+            }
             else
             {
                 LONG l = bytes;
-
                 CachePostDMA((APTR)job->bj_WriteLo, &l, 0);
             }
         }
