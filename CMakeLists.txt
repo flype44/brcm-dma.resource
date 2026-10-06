@@ -1,16 +1,28 @@
 cmake_minimum_required(VERSION 3.14.0)
 project(brcm-dma VERSION 0.1.0)
 
-include(cmake/bin2h.cmake)
-include(cmake/verstring.cmake)
-
+# The dependencies are submodules, and are used as such. devicetree.resource and mailbox.resource are projects of their own: their SFD generates the stubs
+# (proto/devicetree.h, proto/mailbox.h) in their own build directory and the CMake targets devicetree and mailbox carry the include directory. They are
+# not built for themselves (EXCLUDE_FROM_ALL: they go to the ROM of Emu68 on their own). mailbox.resource has a devicetree.resource of its own as a submodule:
+# not needed, the target devicetree exists already (see its CMakeLists.txt).
 if(NOT TARGET devicetree)
     add_subdirectory(devicetree.resource EXCLUDE_FROM_ALL)
 endif()
 
-include(cmake/sfdc.cmake)
+if(NOT TARGET mailbox)
+    add_subdirectory(mailbox.resource EXCLUDE_FROM_ALL)
+endif()
 
-add_subdirectory(private)
+# gic400.library ships its headers already generated (proto/, inline/, clib/, pragmas/, libraries/gic400.h): only those are used. The project itself is
+# not added: it needs Emu68Common to be built, and the library is in the ROM of Emu68 anyway.
+add_library(gic400 INTERFACE)
+target_include_directories(gic400 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/gic400.library/include)
+
+# What is ours comes last: the projects above define a bin_to_header(), a get_verstring() and an sfdc() of their own, and the last definition is the one
+# that stays (the sfdc() of this repository names the generated files after the module, see cmake/sfdc.cmake)
+include(cmake/bin2h.cmake)
+include(cmake/verstring.cmake)
+include(cmake/sfdc.cmake)
 
 get_verstring(VERSTRING)
 sfdc(sfd/brcm-dma_lib.sfd)
