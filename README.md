@@ -33,25 +33,44 @@ The BCM2835 family (Zero, Pi 2, Pi 3) and the historic channels are described an
 ## A quick usage example
 
 ```c
-client = BDMA_OpenClientTags(
-	BDC_Name, "MyProgram", 
-	TAG_DONE);
+#include <proto/exec.h>
+#include <proto/bcmdma.h>
+#include <resources/brcm-dma.h>
 
-job = BDMA_AllocJobTags(client, 
-	BDJ_Src,      frame, 
-	BDJ_Dst,      screen, 
-	BDJ_Length,   width * 4, 
-	BDJ_Rows,     height, 
-	BDJ_SrcPitch, srcPitch, 
-	BDJ_DstPitch, dstPitch, 
-	TAG_DONE);
+struct Library *BDMABase;
 
-BDMA_StartJob(job);         /* returns at once */
-DoSomething();              /* the 68k works meanwhile */
-error = BDMA_WaitJob(job);  /* asleep until the job is over; the cache is already right */
-
-BDMA_FreeJob(job);
-BDMA_CloseClient(client);
+if ((BDMABase = OpenResource(BRCMDMANAME)) != NULL)
+{
+	struct BDMAClient *client;
+	struct BDMAJob *job;
+	ULONG error;
+	
+	/* Create a DMA client */
+	if ((client = BDMA_OpenClientTags(
+		BDC_Name, (ULONG)"MyProgram", 
+		TAG_DONE)) != NULL)
+	{
+		/* Allocate a DMA job */
+		job = BDMA_AllocJobTags(client, 
+			BDJ_Src,      frame, 
+			BDJ_Dst,      screen, 
+			BDJ_Length,   width * 4, 
+			BDJ_Rows,     height, 
+			BDJ_SrcPitch, srcPitch, 
+			BDJ_DstPitch, dstPitch, 
+			TAG_DONE);
+		
+		if (job != NULL)
+		{
+			BDMA_StartJob(job);         /* returns at once */
+			DoSomething();              /* the 68k works meanwhile */
+			error = BDMA_WaitJob(job);  /* asleep until the job is over */
+			BDMA_FreeJob(job);
+		}
+		
+		BDMA_CloseClient(client);
+	}
+}
 ```
 
 ## Licence
