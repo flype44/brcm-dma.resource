@@ -18,17 +18,17 @@ It is running on a Raspberry Pi 4B (BCM2711) in the ROM of Emu68.
 
 1.0 GB/s for a copy, 1.25 GB/s for a fill, a job described once and started again in 49 us, an urgent 4 KB job behind two big ones in 1.8 ms, no failure in the test tools (13536 path cases, the queue, big jobs up to 64 MB, a soak).
 
-The BCM2835 family (Zero, Pi 2, Pi 3) and the historic channels are described and measured, ** not yet written**.
+The BCM2835 family (Zero, Pi 2, Pi 3) and the historic channels are described and measured, **not yet written**.
 
 ## Function set
 
-- See `Implementation.md`
-- See `Autodocs/brcm-dma.doc`
+- See [Autodocs](Autodocs/brcm-dma.doc)
+- See [Implementation.md](Implementation.md)
 
 ## Architecture and what is still to do:
 
-- See `Architecture.md` (specifications)
-- See `Capabilities.md` (hardware benchmarks)
+- See [Architecture](Architecture.md) (specifications)
+- See [Capabilities](Capabilities.md) (hardware benchmarks)
 
 ## A quick usage example
 
@@ -36,16 +36,16 @@ The BCM2835 family (Zero, Pi 2, Pi 3) and the historic channels are described an
 client = BDMA_OpenClientTags(BDC_Name, "MyPlayer", TAG_DONE);
 
 job = BDMA_AllocJobTags(client, 
-	BDJ_Src, frame, 
-	BDJ_Dst, screen, 
-	BDJ_Length, width * 4, 
-	BDJ_Rows, height,
-    BDJ_SrcPitch, srcPitch, 
+	BDJ_Src,      frame, 
+	BDJ_Dst,      screen, 
+	BDJ_Length,   width * 4, 
+	BDJ_Rows,     height, 
+	BDJ_SrcPitch, srcPitch, 
 	BDJ_DstPitch, dstPitch, 
 	TAG_DONE);
 
 BDMA_StartJob(job);         /* returns at once */
-DecodeNextFrame();          /* the 68k works meanwhile */
+DoSomething();              /* the 68k works meanwhile */
 error = BDMA_WaitJob(job);  /* asleep until the job is over; the cache is already right */
 
 BDMA_FreeJob(job);
@@ -54,8 +54,8 @@ BDMA_CloseClient(client);
 
 ## Licence
 
-MPL-2.0, as Emu68 (see `LICENSE`).
+MPL-2.0, as Emu68, see [LICENSE](LICENSE).
 
-It is built on the model of `mailbox.resource`
+It is built on the model of [mailbox.resource](https://github.com/michalsc/mailbox.resource).
 
 Same layout, same build, same documentation and ABI versioning.
