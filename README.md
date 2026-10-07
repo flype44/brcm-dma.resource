@@ -2,21 +2,31 @@
 
 PiStorm / Emu68 AmigaOS resource to manage Raspberry Pi DMA jobs.
 
-This module is intented to be embedded in the **Emu68 ROM**.
+This module is intended to be embedded in the **Emu68 ROM**.
 
-## Introduction
+## What it is
 
-AmigaOS resource for PiStorm / Emu68 that owns the DMA engine of the Broadcom SoC of the Raspberry Pi and offers it to any program as a native, asynchronous memory copy: jobs (a copy, a rectangle with pitches, a fill, a move by whole rows) described once and started as often as wanted, run in slices so that an urgent job does not wait for a big one, completion by interrupt and by a reply to a message port (a task asleep, or a software interrupt for a driver), the cache looked after, a clean hardware state at every start of the OS.
+An AmigaOS resource for PiStorm / Emu68 that owns the DMA engine of the Broadcom SoC of the Raspberry Pi. It offers it to any program as a safe, asynchronous memory transfer, and it hides the model of the Pi from its clients.
 
-This resource hides the model of the Pi from its clients.
+- **Jobs, described by TagList:** a copy, a rectangle with pitches, a fill, a move by whole rows. A job is described once and started as often as wanted.
+- **Scheduling:** jobs are queued by priority and order of submission onto a pool of channels (the client never picks one). A job never overtakes an older one it conflicts with, and big jobs run in slices so that an urgent job does not wait for them.
+- **Completion:** by interrupt, and by a reply to a message port (a task asleep, or a software interrupt for a driver). A timeout watchdog and `BDMA_AbortJob()` are there for the rest.
+- **The hardware rules are the resource's business:** physical addresses, control blocks, alignment, cache maintenance, and a clean hardware state at every start of the OS.
+
+## What it aims at maturity
+
+A general purpose DMA service for the Amiga side of the Pi, not tied to graphics or to one client:
+
+- every channel class the hardware offers (40 bit, normal, lite) arbitrated by the resource, and one backend per SoC family;
+- the same TagList interface growing to scatter-gather, cyclic and dependent jobs, and peripheral transfers (DREQ), over a raw chain interface and under a client library of conveniences;
+- drivers (VideoCore.card first) using it instead of carrying their own DMA code, so that the 68k stays free; the DMA is not meant to beat the CPU on raw speed;
+- a stable, versioned ABI, ready for Michal to adopt in the Emu68 ROM as it is.
+
+See [Architecture](Architecture.md) (design and what is still to do) and [Capabilities](Capabilities.md) (hardware benchmarks).
 
 ## Status
 
-Current status is version **0.1**.
-
-The specifications and development are still Work In Progress.
-
-It is tested and running on a Raspberry Pi 4B (BCM2711) in the ROM of Emu68.
+Version **0.1**, tested and running on a Raspberry Pi 4B (BCM2711) in the ROM of Emu68, on the two 40 bit channels 12 and 13. The specifications and development are still Work In Progress.
 
 1.0 GB/s for a copy, 1.25 GB/s for a fill, a job described once and started again in 49 us, an urgent 4 KB job behind two big ones in 1.8 ms, no failure in the test tools (13536 path cases, the queue, big jobs up to 64 MB, a soak).
 
@@ -27,16 +37,11 @@ The BCM2835 family (Zero, Pi 2, Pi 3) and the historic channels are described an
 - See [Autodocs](Autodocs/brcm-dma.doc)
 - See [Implementation](Implementation.md)
 
-## Architecture and Todo
-
-- See [Architecture](Architecture.md) (specifications)
-- See [Capabilities](Capabilities.md) (hardware benchmarks)
-
 ## A quick usage example
 
 ```c
 #include <proto/exec.h>
-#include <proto/bcmdma.h>
+#include <proto/brcm-dma.h>
 #include <resources/brcm-dma.h>
 
 struct Library *BDMABase;
