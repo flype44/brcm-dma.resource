@@ -4,11 +4,11 @@
 
    FORMAT
 
-	COPYMEMDMA [CM] [CMQ] [THRESHOLD <bytes>] [REMOVE] [STATUS] [FORCE]
+	COPYMEMDMA [CM] [CMQ] [THRESHOLD <bytes>] [REMOVE] [STATUS] [FORCE] [BENCH [QUICK] [SIZE <bytes>]]
 
    TEMPLATE
 
-	CM/S,CMQ/S,THRESHOLD/N,REMOVE/S,STATUS/S,FORCE/S
+	CM/S,CMQ/S,THRESHOLD/N,REMOVE/S,STATUS/S,FORCE/S,BENCH/S,QUICK/S,SIZE/N
 
    PATH
 
@@ -37,6 +37,11 @@
 	            in less than one: with a small threshold a program that copies
 	            many small blocks (a MUI application, for instance) takes
 	            minutes. For stress tests only.
+	BENCH     - Measure how much of the CPU is left to the other tasks while
+	            the system copies, with the patch or without it (see NOTES). It
+	            installs nothing: run it without the patch, then with it.
+	QUICK     - With BENCH: use CopyMemQuick() instead of CopyMem().
+	SIZE      - With BENCH: one size in bytes instead of 4 KB to 4 MB.
 	STATUS    - Show the state of the patch that is installed, without
 	            changing it: the threshold, the copies done by the DMA, those
 	            that were given back to the CPU after a job, those that the CPU
@@ -95,6 +100,15 @@
 	For further information, please see:
 	https://github.com/flype44/brcm-dma.resource
 
+	BENCH. A task of low priority does nothing but count, while the command
+	copies blocks of one size for half a second. When the CPU copies, the
+	counter hardly moves; when the DMA copies, the task sleeps and the counter
+	runs. "CPU free" is the speed of the counter during the copies divided by
+	its speed alone. "by DMA" is the number of copies that went to the DMA
+	(the counters of the patch; a dash if there is none). The counter is an
+	estimate: the cycles that the cache and the interrupt at the end of a job
+	take are not seen by it. Do not run anything else meanwhile.
+
    EXAMPLES
 
 	> copymemdma CM CMQ
@@ -105,6 +119,9 @@
 
 	> copymemdma CM CMQ THRESHOLD=4096 FORCE
 	  A low threshold, for a stress test.
+
+	> copymemdma BENCH
+	  The table without the patch, then again with it: compare.
 
 	> copymemdma REMOVE
 	  Take the patch off.

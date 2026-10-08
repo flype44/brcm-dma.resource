@@ -39,8 +39,10 @@
 #include <dos/rdargs.h>
 #include <workbench/startup.h>
 #include <utility/tagitem.h>
+#include <devices/timer.h>
 
 #include <proto/exec.h>
+#include <proto/timer.h>
 #include <proto/dos.h>
 #include <proto/brcm-dma.h>
 
@@ -575,9 +577,221 @@ static int RemovePatch(void)
     return RETURN_WARN;
 }
 
+/* BENCH: how much of the CPU is left to the other tasks while the system copies, with the patch or without it. A task of low priority does
+   nothing but count; the task of the benchmark copies blocks of one size for half a second. When the CPU copies, the benchmark task keeps
+   it and the counter hardly moves. When the DMA copies, the benchmark task sleeps and the counter runs. The ratio of the speed of the
+   counter during the copies to its speed alone is the share of the CPU that was left, and the table says how many of the copies went to
+   the DMA (the counters of the patch, when there is one). It costs the patch nothing: nobody else runs this code. The counter is an
+   estimate: the cycles that the cache and the interrupt of the end of a job take from the counter are not seen in it. */
+#define BENCH_MS            500UL               /* the length of each phase */
+#define BENCH_TICKS         25L                 /* the same, in ticks of 1/50 s, for the phase of the counter alone */
+
+struct Device *TimerBase;
+static struct MsgPort *TimerPort;
+static struct timerequest *TimerReq;
+static ULONG TimerFreq;                         /* ticks of the E-clock in a second */
+static struct State BenchState;
+static volatile ULONG BenchCount, BenchStop, BenchDone;
+
+static BOOL OpenTimer(void)
+{
+    TimerPort = CreateMsgPort();
+    if (TimerPort == NULL)
+        return FALSE;
+
+    TimerReq = (struct timerequest *)CreateIORequest(TimerPort, sizeof(struct timerequest));
+    if (TimerReq == NULL)
+    {
+        DeleteMsgPort(TimerPort);
+        return FALSE;
+    }
+
+    if (OpenDevice((STRPTR)"timer.device", UNIT_ECLOCK, (struct IORequest *)TimerReq, 0) != 0)
+    {
+        DeleteIORequest((struct IORequest *)TimerReq);
+        DeleteMsgPort(TimerPort);
+        return FALSE;
+    }
+
+    TimerBase = TimerReq->tr_node.io_Device;
+
+    return TRUE;
+}
+
+static void CloseTimer(void)
+{
+    CloseDevice((struct IORequest *)TimerReq);
+    DeleteIORequest((struct IORequest *)TimerReq);
+    DeleteMsgPort(TimerPort);
+}
+
+/* the low 32 bits of the E-clock: the difference of two readings is right when it wrapped once */
+static ULONG Ticks(void)
+{
+    struct EClockVal ev;
+
+    TimerFreq = ReadEClock(&ev);
+
+    return ev.ev_lo;
+}
+
+static ULONG ElapsedMs(
+    ULONG t0,
+    ULONG t1)
+{
+    ULONG ms = (t1 - t0) / (TimerFreq / 1000UL);
+
+    return ms == 0 ? 1 : ms;
+}
+
+/* The task of low priority */
+static void CounterEntry(void)
+{
+    while (!BenchStop)
+        BenchCount++;
+
+    BenchDone = 1;
+}
+
+static BOOL BenchSize(
+    ULONG size,
+    BOOL quick)
+{
+    UBYTE *src, *dst;
+    ULONG t0, t1, c0, c1, i, every, copies = 0, msBase, msCopy, rateBase, rateCopy, dma = 0;
+    BOOL patched;
+
+    src = AllocMem(size, MEMF_PUBLIC | MEMF_FAST);
+    dst = AllocMem(size, MEMF_PUBLIC | MEMF_FAST);
+    if (src == NULL || dst == NULL)
+    {
+        Printf("| %8ld | (no memory: skipped)\n", (LONG)size);
+        if (src != NULL)
+            FreeMem(src, size);
+        if (dst != NULL)
+            FreeMem(dst, size);
+        return TRUE;
+    }
+
+    for (i = 0; i < size; i++)
+        src[i] = (UBYTE)i;
+
+    /* the counter alone */
+    c0 = BenchCount;
+    t0 = Ticks();
+    Delay(BENCH_TICKS);
+    t1 = Ticks();
+    c1 = BenchCount;
+    msBase = ElapsedMs(t0, t1);
+    rateBase = (c1 - c0) / msBase;
+
+    /* the copies; the clock is read every few copies when they are short */
+    patched = Peek(&BenchState);
+    if (patched)
+        dma = BenchState.dma;
+    every = size >= 65536UL ? 1 : 65536UL / size;
+    c0 = BenchCount;
+    t0 = Ticks();
+    do
+    {
+        for (i = 0; i < every; i++)
+        {
+            if (quick)
+                CopyMemQuick(src, dst, size);
+            else
+                CopyMem(src, dst, size);
+        }
+        copies += every;
+        t1 = Ticks();
+        msCopy = ElapsedMs(t0, t1);
+    }
+    while (msCopy < BENCH_MS);
+    c1 = BenchCount;
+    rateCopy = (c1 - c0) / msCopy;
+
+    if (patched && Peek(&BenchState))
+        dma = BenchState.dma - dma;
+
+    Printf("| %8ld | %8ld | %9ld | %4ld.%ld %% | %9ld |\n",
+        (LONG)size,
+        (LONG)copies,
+        (LONG)(((copies * (size >> 10)) * 1000UL / msCopy) / 1024UL),
+        (LONG)(rateBase ? rateCopy * 1000UL / rateBase / 10 : 0),
+        (LONG)(rateBase ? (rateCopy * 1000UL / rateBase) % 10 : 0),
+        (LONG)dma);
+
+    FreeMem(src, size);
+    FreeMem(dst, size);
+
+    return (SetSignal(0, SIGBREAKF_CTRL_C) & SIGBREAKF_CTRL_C) == 0;
+}
+
+static int RunBench(
+    BOOL quick,
+    ULONG only)
+{
+    static const ULONG sizes[] = { 4096, 16384, 65536, 262144, 1048576, 4194304 };
+    struct State seen;
+    struct Process *counter;
+    ULONG i;
+    int rc = RETURN_OK;
+
+    if (!OpenTimer())
+    {
+        Printf("%s: no timer.device\n", (LONG)CMD_NAME);
+        return RETURN_ERROR;
+    }
+
+    BenchStop = 0;
+    BenchDone = 0;
+    counter = CreateNewProcTags(
+        NP_Entry, (ULONG)CounterEntry,
+        NP_Name, (ULONG)"copymemdma counter",
+        NP_Priority, (ULONG)-5,
+        NP_StackSize, 2048,
+        TAG_DONE);
+    if (counter == NULL)
+    {
+        Printf("%s: cannot create the counter task\n", (LONG)CMD_NAME);
+        CloseTimer();
+        return RETURN_ERROR;
+    }
+
+    Printf("%s\n", (LONG)(Version + 6));
+    if (Peek(&seen))
+        Announce(seen.cmPatched, seen.cmqPatched, seen.threshold, "is installed");
+    else
+        Printf("%s: no patch installed: the CPU does the copies\n", (LONG)CMD_NAME);
+    Printf("Copies with %s, %ld ms for each size. CPU free = share of the CPU left to a task of lower priority.\n\n",
+        (LONG)(quick ? "CopyMemQuick()" : "CopyMem()"),
+        (LONG)BENCH_MS);
+    Printf("|     size |   copies |      MB/s | CPU free |  by DMA   |\n");
+    Printf("+----------+----------+-----------+----------+-----------+\n");
+
+    if (only != 0)
+        BenchSize(only, quick);
+    else
+        for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
+            if (!BenchSize(sizes[i], quick))
+            {
+                Printf("(stopped)\n");
+                rc = RETURN_WARN;
+                break;
+            }
+
+    /* the counter task runs code of this program: wait for it to be over before leaving */
+    BenchStop = 1;
+    while (!BenchDone)
+        Delay(1);
+    Delay(5);
+    CloseTimer();
+
+    return rc;
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
-    LONG args[6] = { 0, 0, 0, 0, 0, 0 };
+    LONG args[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     struct RDArgs *rda;
     struct State seen;
     struct CommandLineInterface *cli;
@@ -585,7 +799,8 @@ int main(int argc, struct WBStartup *wbmsg)
     ULONG threshold = DEFAULT_THRESHOLD;
     LONG waited;
     int rc = RETURN_OK;
-    BOOL cm = FALSE, cmq = FALSE, takeoff = FALSE, status = FALSE, force = FALSE;
+    BOOL cm = FALSE, cmq = FALSE, takeoff = FALSE, status = FALSE, force = FALSE, bench = FALSE, quick = FALSE;
+    ULONG benchsize = 0;
     LONG available = 0;
 
     (void)argc;
@@ -607,7 +822,7 @@ int main(int argc, struct WBStartup *wbmsg)
     }
     else
     {
-        rda = ReadArgs("CM/S,CMQ/S,THRESHOLD/N,REMOVE/S,STATUS/S,FORCE/S", args, NULL);
+        rda = ReadArgs("CM/S,CMQ/S,THRESHOLD/N,REMOVE/S,STATUS/S,FORCE/S,BENCH/S,QUICK/S,SIZE/N", args, NULL);
         if (rda == NULL)
         {
             PrintFault(IoErr(), (STRPTR)CMD_NAME);
@@ -621,7 +836,18 @@ int main(int argc, struct WBStartup *wbmsg)
         takeoff = args[3] != 0;
         status = args[4] != 0;
         force = args[5] != 0;
+        bench = args[6] != 0;
+        quick = args[7] != 0;
+        if (args[8] != 0)
+            benchsize = *(ULONG *)args[8];
         FreeArgs(rda);
+    }
+
+    if (bench)
+    {
+        rc = RunBench(quick, benchsize);
+        CloseLibrary((struct Library *)DOSBase);
+        return rc;
     }
 
     if (status)
@@ -641,7 +867,7 @@ int main(int argc, struct WBStartup *wbmsg)
     if (!cm && !cmq)
     {
         Printf("%s\n", (LONG)(Version + 6));
-        Printf("usage: %s CM/S CMQ/S THRESHOLD/N REMOVE/S STATUS/S FORCE/S  (CM and/or CMQ to install)\n", (LONG)CMD_NAME);
+        Printf("usage: %s CM/S CMQ/S THRESHOLD/N REMOVE/S STATUS/S FORCE/S BENCH/S QUICK/S SIZE/N  (CM and/or CMQ to install)\n", (LONG)CMD_NAME);
         CloseLibrary((struct Library *)DOSBase);
         return RETURN_ERROR;
     }
