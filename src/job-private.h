@@ -21,7 +21,7 @@
     ULONG               bj_Sequence;        /* the order of submission: the contract of the order between jobs */
     struct Task *       bj_Waiter;          /* a task asleep in BDMA_WaitJob() that does not own the reply port: signalled at the reply */
     ULONG               bj_WaitMask;
-    ULONG               bj_Queued;          /* the timer when it entered the queue (submission, or back after a slice): the wait statistic */
+    ULONG               bj_Queued;          /* the timer when it entered the queue (submission, or back after a slice), 0 until BDMA_Stamp(), and for a job that never waited: the wait statistic */
     UBYTE               bj_Deferred;        /* already counted in bdb_Deferred for this stay in the queue */
     volatile UBYTE      bj_State;           /* BJS_*: changed by the interrupt */
     volatile UBYTE      bj_Active;          /* slices of the job on channels now (0 to the number of channels): a job that can be split has two at a time */

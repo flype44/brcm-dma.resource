@@ -33,7 +33,8 @@
 /* Up to three control blocks of 32 bytes a row: a head and a tail of 32 bit accesses around a body of 128 bit accesses */
 /* A job runs in slices: units of at most BDMA_SLICE_BYTES (a piece of a row), about a megabyte, which is about a millisecond of the channel, and at most
    BDMA_SLICE_UNITS of them in one chain. Between two slices the job waits its turn again in the queue: a more urgent job goes first. */
-#define BDMA_DEFAULT_TIMEOUT 1000000UL     /* a slice is a megabyte: a millisecond, thirty at the slowest channel; a second is a channel that is stuck */
+#define BDMA_MAX_TIMEOUT     10000000UL    /* the longest BDJ_Timeout: 0 and larger values mean this, a job never waits for a stuck channel forever */
+#define BDMA_DEFAULT_TIMEOUT 1000000UL    /* a slice is a megabyte: a millisecond, thirty at the slowest channel; a second is a channel that is stuck */
 #define BDMA_SLICE_BYTES  0x100000UL
 #define BDMA_SLICE_UNITS  1280
 #define BDMA_MAX_BLOCKS   (3 * BDMA_SLICE_UNITS)
@@ -261,6 +262,7 @@ ULONG BDMA_FillQuery(struct Library *UtilityBase, const struct TagItem *tags, co
 /* The jobs (job.c) */
 LONG BDMA_CheckRequest(struct BDMABase *BDMABase, struct BDMAJob *job);
 VOID BDMA_ReplyJob(struct BDMABase *BDMABase, struct BDMAJob *job);
+BOOL BDMA_WouldWait(struct BDMABase *BDMABase, struct BDMAJob *job);
 VOID BDMA_AbortInternal(struct BDMABase *BDMABase, struct BDMAJob *job);
 VOID BDMA_Release(struct BDMABase *BDMABase, struct BDMAJob *job);
 ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"));
@@ -268,10 +270,12 @@ ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"));
 /* The engine (engine.c) */
 BOOL BDMA_StartEngine(struct BDMABase *BDMABase);
 VOID BDMA_Run(struct BDMABase *BDMABase);
-/* A job enters the queue (the caller has the interrupts off) */
+VOID BDMA_Stamp(struct BDMAJob *job);
+/* A job enters the queue (the caller has the interrupts off). The date of the entry is not read here: BDMA_Stamp() does it, once the
+   scheduler has had its turn, for the job that still waits */
 #define BDMA_ENQUEUED(base, job) \
     do { \
-        (job)->bj_Queued = timer_now(); \
+        (job)->bj_Queued = 0; \
         (job)->bj_Deferred = 0; \
         if (++(base)->bdb_Waiting > (base)->bdb_QueueMax) (base)->bdb_QueueMax = (base)->bdb_Waiting; \
     } while (0)

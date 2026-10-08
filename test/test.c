@@ -571,6 +571,29 @@ static void StepMisc(void)
     if (j2)
         BDMA_WaitJob(j2);
 
+    /* BDJ_NoWait and a conflict: a channel is idle, but the job writes what a slower job (still not over) writes, so it would have to wait.
+       If the first job is over already by the time the second is submitted, the case did not happen and nothing is checked. */
+    e = 0xdead;
+    ClearZone(ZONE_B, 0x20000, 0);
+    CacheClearE(b, 0x20000, CACRF_ClearD);
+    j1 = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)a, BDJ_Dst, (ULONG)b, BDJ_Length, 16, BDJ_Rows, 1280, BDJ_SrcPitch, 64, BDJ_DstPitch, 64, BDJ_NoCache, TRUE, TAG_DONE);
+    j2 = BDMA_AddJobTags(Client, BDJ_FillValue, 5, BDJ_Dst, (ULONG)b, BDJ_Length, 128, BDJ_NoCache, TRUE, BDJ_NoWait, TRUE, TAG_DONE);
+    if (j1 && j2)
+    {
+        ULONG st = 99, r2;
+
+        BDMA_QueryJobTags(j1, BDJI_State, (ULONG)&st, TAG_DONE);
+        r2 = BDMA_WaitJob(j2);
+        if (st != 2)       /* BDJS_DONE: the first job was not over when the second was submitted */
+            Check("nowait: refused for a conflict although a channel is idle", r2, BDERR_BUSY);
+        else
+            Printf("  (nowait conflict: the first job was over already, not checked)\n");
+    }
+    else if (j2)
+        BDMA_WaitJob(j2);
+    if (j1)
+        BDMA_WaitJob(j1);
+
     BDMA_QueryInfoTags(BDI_Jobs, (ULONG)&jobs1, BDI_Failures, (ULONG)&fail1, TAG_DONE);
     Printf("  jobs done: %ld more, failures: %ld more\n", (LONG)(jobs1 - jobs0), (LONG)(fail1 - fail0));
     Check("statistics: no failure", fail1 - fail0, 0);

@@ -88,32 +88,6 @@ VOID L_BDMA_StartJob(
     job->bj_Taken = 0;
     job->bj_Waiter = NULL;
 
-    /* every channel busy and the caller does not want to wait */
-    if (r->bdr_Given & BDRF_NOWAIT)
-    {
-        ULONG i;
-        BOOL idle = FALSE;
-
-        Disable();
-        for (i = 0; i < BDMABase->bdb_Channels; i++)
-        {
-            if (BDMABase->bdb_Channel[i].bc_Job == NULL && BDMABase->bdb_Channel[i].bc_Registered)
-            {
-                idle = TRUE;
-            }
-        }
-        Enable();
-
-        if (!idle)
-        {
-            BDMABase->bdb_Busy++;
-            job->bj_State = BJS_FAILED;
-            job->bj_Error = BDERR_BUSY;
-            BDMA_ReplyJob(BDMABase, job);
-            return;
-        }
-    }
-
     if (!(r->bdr_Given & BDRF_NOCACHE))
     {
         /* the memory of the RTG board is not cached by the CPU */
@@ -129,6 +103,18 @@ VOID L_BDMA_StartJob(
     }
 
     Disable();
+
+    /* the caller does not want to wait: no idle channel, or a conflict with a job that runs or is queued */
+    if ((r->bdr_Given & BDRF_NOWAIT) && BDMA_WouldWait(BDMABase, job))
+    {
+        BDMABase->bdb_Busy++;
+        job->bj_State = BJS_FAILED;
+        job->bj_Error = BDERR_BUSY;
+        Enable();
+        BDMA_ReplyJob(BDMABase, job);
+        return;
+    }
+
     job->bj_Sequence = ++BDMABase->bdb_Sequence;
     job->bj_State = BJS_QUEUED;
     AddTail((struct List *)&BDMABase->bdb_Queue, BDMA_JOBNODE(job));
@@ -137,4 +123,12 @@ VOID L_BDMA_StartJob(
     Enable();
 
     BDMA_Run(BDMABase);
+
+    /* only a job that still waits is dated; the state is read again with the interrupts off, a job that went on a channel costs nothing here */
+    if (job->bj_State == BJS_QUEUED)
+    {
+        Disable();
+        BDMA_Stamp(job);
+        Enable();
+    }
 }

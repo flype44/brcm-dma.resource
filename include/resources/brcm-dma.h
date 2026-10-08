@@ -47,13 +47,13 @@ struct BDMAJob;
 #define BDJ_DstPitch        (BDMA_Dummy + 7)     /* ULONG, bytes between two destination rows, default BDJ_Length */
 #define BDJ_Move            (BDMA_Dummy + 8)     /* BOOL, the areas may overlap by whole rows (a scroll); equal pitches */
 #define BDJ_NoCache         (BDMA_Dummy + 9)     /* BOOL, no cache maintenance (memory that the CPU does not cache) */
-#define BDJ_NoWait          (BDMA_Dummy + 10)    /* BOOL, BDERR_BUSY instead of queueing when every channel is busy */
+#define BDJ_NoWait          (BDMA_Dummy + 10)    /* BOOL, BDERR_BUSY instead of queueing when every channel is busy or the job would wait for a conflict */
 #define BDJ_Priority        (BDMA_Dummy + 11)    /* ULONG, BDPRI_*, default BDPRI_NORMAL */
 #define BDJ_ReplyPort       (BDMA_Dummy + 12)    /* struct MsgPort *, replied to when the job is over (default: the port of the client) */
 #define BDJ_ErrorCode       (BDMA_Dummy + 14)    /* ULONG *, receives a BDERR_* (BDERR_OK when the job was accepted) */
 #define BDJ_Strict          (BDMA_Dummy + 15)    /* BOOL, a tag that this version does not know is DMAERR_ARGS, not ignored */
 #define BDJ_Classes         (BDMA_Dummy + 16)    /* ULONG, BDCLASS_*: the classes of channel the job may run on (default: every class that can do it) */
-#define BDJ_Timeout         (BDMA_Dummy + 17)    /* ULONG, microseconds: the longest a slice of the job (1 MB at most) may stay on a channel; 0 = no limit; default 1000000. Over it the channel is stopped and the job is BDERR_TIMEOUT */
+#define BDJ_Timeout         (BDMA_Dummy + 17)    /* ULONG, microseconds: the longest a slice of the job (1 MB at most) may stay on a channel; default 1000000, at most 10000000 (0 and larger values give 10000000). Over it the channel is stopped and the job is BDERR_TIMEOUT */
 #define BDJ_FillBytes       (BDMA_Dummy + 18)    /* ULONG, bytes of the pixel that BDJ_FillValue repeats: 1, 2 or 4 (default 4); BDJ_Length is a multiple of it */
 
 /* brcm-dma client (BDMA_OpenClientTagList) */

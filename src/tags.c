@@ -63,7 +63,7 @@ LONG BDMA_ParseTags(
             case BDJ_Priority:      r->bdr_Priority = t->ti_Data; break;
             case BDJ_ReplyPort:     r->bdr_ReplyPort = (struct MsgPort *)t->ti_Data; break;
             case BDJ_Classes:       r->bdr_Classes = t->ti_Data;     r->bdr_Given |= BDRF_CLASSES; break;
-            case BDJ_Timeout:       r->bdr_Timeout = t->ti_Data; break;
+            case BDJ_Timeout:       r->bdr_Timeout = (t->ti_Data == 0 || t->ti_Data > BDMA_MAX_TIMEOUT) ? BDMA_MAX_TIMEOUT : t->ti_Data; break;
             case BDJ_ErrorCode:     error_code = (ULONG *)t->ti_Data; break;
             default:                r->bdr_Unknown++; break;
         }

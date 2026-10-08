@@ -183,6 +183,45 @@ static BOOL Free(
     return TRUE;
 }
 
+/* Would this job, not yet queued, have to wait? It does when no channel is idle, or when it conflicts with a job that runs or
+   that is queued (every queued job is older than it). Called with the interrupts off, for BDJ_NoWait.
+*/
+BOOL BDMA_WouldWait(
+    struct BDMABase *BDMABase,
+    struct BDMAJob *j)
+{
+    struct BDMAJob *o;
+    BOOL idle = FALSE;
+    ULONG i;
+
+    for (i = 0; i < BDMABase->bdb_Channels; i++)
+    {
+        struct BDMAJob *run = BDMABase->bdb_Channel[i].bc_Job;
+
+        if (run == NULL)
+        {
+            if (BDMABase->bdb_Channel[i].bc_Registered)
+            {
+                idle = TRUE;
+            }
+        }
+        else if (Conflict(j, run))
+        {
+            return TRUE;
+        }
+    }
+
+    for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); o->bj_Node.mln_Succ != NULL; o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
+    {
+        if (Conflict(j, o))
+        {
+            return TRUE;
+        }
+    }
+
+    return !idle;
+}
+
 /* Picks the slice that may start now on an idle channel and hands the channel to it.
    First choice: the job that has none on a channel, the best priority and then the order of submission. Only when no such job
    can start, a job that is already running and can be split gets a second slice on the idle channel (the opportunistic use of
@@ -257,9 +296,15 @@ static struct BDMAChannel *Pick(
         /* the first slice of this stay in the queue */
         BDMABase->bdb_Waiting--;
 
-        if (timer_now() - best->bj_Queued > BDMABase->bdb_WaitMax)
+        /* a job that went on a channel at once was never stamped (BDMA_Stamp): it did not wait, and the timer is not read for it */
+        if (best->bj_Queued != 0)
         {
-            BDMABase->bdb_WaitMax = timer_now() - best->bj_Queued;
+            ULONG waited = timer_now() - best->bj_Queued;
+
+            if (waited > BDMABase->bdb_WaitMax)
+            {
+                BDMABase->bdb_WaitMax = waited;
+            }
         }
 
         best->bj_State = BJS_RUNNING;
@@ -523,6 +568,18 @@ static VOID Finish(
    The job goes on if it has slices left (it waits its turn again when none of its slices is on a channel, so that a more urgent
    job may go first), or ends when the last one is over; then the next slices that can start do.
 */
+/* Dates the entry of a job in the queue, for the wait statistic, if it is still there: the scheduler has had its turn and did not take it.
+   Called with the interrupts off. The timer is read only for a job that waits.
+*/
+VOID BDMA_Stamp(
+    struct BDMAJob *job)
+{
+    if (job->bj_State == BJS_QUEUED && job->bj_Queued == 0)
+    {
+        job->bj_Queued = timer_now();
+    }
+}
+
 VOID BDMA_ChannelEnded(
     struct BDMABase *BDMABase,
     struct BDMAChannel *channel,
@@ -530,6 +587,7 @@ VOID BDMA_ChannelEnded(
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAJob *job = channel->bc_Job;
+    struct BDMAJob *requeued = NULL;
 
     channel->bc_Job = NULL;
 
@@ -565,6 +623,7 @@ VOID BDMA_ChannelEnded(
                 /* the job waits its turn again (it is still in the queue, in its place) */
                 job->bj_State = BJS_QUEUED;
                 BDMA_ENQUEUED(BDMABase, job);
+                requeued = job;
             }
         }
         else if (job->bj_Active == 0)
@@ -587,6 +646,11 @@ VOID BDMA_ChannelEnded(
         }
 
         BDMA_StartOnChannel(BDMABase, idle, next);
+    }
+
+    if (requeued != NULL)
+    {
+        BDMA_Stamp(requeued);
     }
 }
 

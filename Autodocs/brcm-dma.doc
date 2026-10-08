@@ -139,11 +139,11 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 	                rectangle that reads everything before it writes (a shift inside a row goes through a buffer of the channel, at about half the
 	                rate); BDERR_OVERLAP only when a row does not fit in that buffer (256 KB)
 	BDJ_NoCache     BOOL, no cache maintenance: for memory that the CPU does not cache, or that the caller looked after
-	BDJ_NoWait      BOOL, BDERR_BUSY (when the job is started) instead of waiting when every channel is busy
+	BDJ_NoWait      BOOL, BDERR_BUSY (when the job is started) instead of waiting, when every channel is busy or the job conflicts with a job that runs or is queued
 	BDJ_Priority    ULONG, BDPRI_LOW, BDPRI_NORMAL or BDPRI_HIGH, default the priority of the client
 	BDJ_ReplyPort   struct MsgPort *, where the job is replied when it is over, default the port of the client
 	BDJ_Classes     ULONG, the classes of channel the job may run on (BDCLASS_DMA40, BDCLASS_NORMAL, BDCLASS_LITE), default every class that can do it
-	BDJ_Timeout     ULONG, microseconds: the longest a slice of the job (a megabyte at most) may stay on a channel; 0 = no limit; default 1000000. Over it the
+	BDJ_Timeout     ULONG, microseconds: the longest a slice of the job (a megabyte at most) may stay on a channel; default 1000000, at most 10000000 (0 and larger values give 10000000: no job waits for a stuck channel forever). Over it the
 	                channel is stopped and the job is replied with BDERR_TIMEOUT. A watchdog on the vertical blank checks it: the resolution is a tick (20 ms)
 	BDJ_Strict      BOOL, a tag that this version does not know is BDERR_ARGS instead of being ignored
 	BDJ_ErrorCode   ULONG *, receives BDERR_OK, or the reason why the job could not be made
