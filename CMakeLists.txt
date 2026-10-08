@@ -132,7 +132,16 @@ if(EXISTS "${P96_INCLUDE}/proto/Picasso96.h")
     target_include_directories(brcm-dma-screen PRIVATE include src ${P96_INCLUDE})
     target_link_options(brcm-dma-screen PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
     target_link_libraries(brcm-dma-screen amiga)
-    set(BRCM_DMA_SCREEN brcm-dma-screen)
+    add_executable(brcm-dma-scroll
+        test/startup.c
+        test/scroll.c
+    )
+
+    target_compile_options(brcm-dma-scroll PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+    target_include_directories(brcm-dma-scroll PRIVATE include src ${P96_INCLUDE})
+    target_link_options(brcm-dma-scroll PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
+    target_link_libraries(brcm-dma-scroll amiga)
+    set(BRCM_DMA_SCREEN brcm-dma-screen brcm-dma-scroll)
 endif()
 
 add_executable(brcm-dma-info
