@@ -120,6 +120,21 @@ target_include_directories(brcm-dma-stack PRIVATE include src)
 target_link_options(brcm-dma-stack PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-stack amiga brcm_dma)
 
+# brcm-dma-screen opens an RTG screen: it needs the includes of Picasso96 (the SDK that VideoCore.card keeps in its build/ folder, or -DP96_INCLUDE=...)
+set(P96_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../VideoCore.card/build/Picasso96Develop-LEGACY/publicinclude" CACHE PATH "include directory of the Picasso96 SDK")
+if(EXISTS "${P96_INCLUDE}/proto/Picasso96.h")
+    add_executable(brcm-dma-screen
+        test/startup.c
+        test/screen.c
+    )
+
+    target_compile_options(brcm-dma-screen PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+    target_include_directories(brcm-dma-screen PRIVATE include src ${P96_INCLUDE})
+    target_link_options(brcm-dma-screen PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
+    target_link_libraries(brcm-dma-screen amiga)
+    set(BRCM_DMA_SCREEN brcm-dma-screen)
+endif()
+
 add_executable(brcm-dma-info
     test/startup.c
     test/info.c
@@ -158,6 +173,6 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/FD/ DESTINATION sdk/FD)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/SFD/ DESTINATION sdk/SFD)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Autodocs/ DESTINATION sdk/Autodocs)
 
-foreach(tool brcm-dma-test brcm-dma-stress brcm-dma-cost brcm-dma-lab brcm-dma-stack brcm-dma-info)
+foreach(tool brcm-dma-test brcm-dma-stress brcm-dma-cost brcm-dma-lab brcm-dma-stack brcm-dma-info ${BRCM_DMA_SCREEN})
     install(PROGRAMS $<TARGET_FILE:${tool}> DESTINATION tools)
 endforeach()

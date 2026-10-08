@@ -761,6 +761,227 @@ static void StepWait(void)
         FreeMem(big2, bigsize);
 }
 
+/* Memory above 1 GB (the exec region that reaches highest). The addresses of the jobs are 32 bit physical addresses: nothing in the resource
+   masks them, only the control blocks live in the low memory of the GPU. Copy, rectangle, fill and move between a high block and the arena
+   (low memory, usually), and between two high blocks. When the machine has no memory up there the blocks are wherever exec puts them (reported). */
+#define HIGHSIZE 0x40000
+
+static ULONG CheckWords(const ULONG *p, ULONG words, ULONG seed)
+{
+    ULONG i, bad = 0;
+
+    for (i = 0; i < words; i++)
+        if (p[i] != Pattern(i, seed))
+            bad++;
+
+    return bad;
+}
+
+static void FillWords(ULONG *p, ULONG words, ULONG seed)
+{
+    ULONG i;
+
+    for (i = 0; i < words; i++)
+        p[i] = Pattern(i, seed);
+}
+
+/* A block taken from the exec memory region that reaches the highest (above 1 GB when there is one): exec has no flag for "above this address",
+   MEMF_REVERSE only takes the end of the first region that fits. The regions are listed with the first call (the substitute of ShowConfig). */
+static struct MemHeader *HighRegion;
+
+static UBYTE *AllocHigh(ULONG size, BOOL list)
+{
+    struct MemHeader *mh, *best = NULL;
+    UBYTE *p = NULL;
+
+    Forbid();
+    for (mh = (struct MemHeader *)SysBase->MemList.lh_Head; mh->mh_Node.ln_Succ != NULL; mh = (struct MemHeader *)mh->mh_Node.ln_Succ)
+    {
+        if (list)
+            Printf("  region %08lx to %08lx, attributes %04lx, pri %ld, free %ld KB%s\n", (ULONG)mh->mh_Lower, (ULONG)mh->mh_Upper, (ULONG)mh->mh_Attributes,
+                   (LONG)mh->mh_Node.ln_Pri, (LONG)(mh->mh_Free >> 10), (LONG)(((ULONG)mh->mh_Upper > 0x40000000UL && (ULONG)mh->mh_Lower < 0x40000000UL) ? " (crosses 1 GB)" : ""));
+
+        if ((mh->mh_Attributes & MEMF_PUBLIC) && (best == NULL || (ULONG)mh->mh_Upper > (ULONG)best->mh_Upper) && mh->mh_Free >= size + 4096)
+            best = mh;
+    }
+
+    if (best != NULL)
+    {
+        p = Allocate(best, size);
+        HighRegion = best;
+    }
+    Permit();
+
+    return p;
+}
+
+static void FreeHigh(UBYTE *p, ULONG size)
+{
+    if (p != NULL)
+    {
+        Forbid();
+        Deallocate(HighRegion, p, size);
+        Permit();
+    }
+}
+
+static void StepHigh(void)
+{
+    UBYTE *hi1 = AllocHigh(HIGHSIZE, TRUE);
+    UBYTE *hi2 = AllocHigh(HIGHSIZE, FALSE);
+    UBYTE *lo = arena + ZONE_A;
+    ULONG i, bad;
+
+    if (hi1 == NULL || hi2 == NULL)
+    {
+        Printf("  (no memory for the test)\n");
+        FreeHigh(hi1, HIGHSIZE);
+        FreeHigh(hi2, HIGHSIZE);
+        return;
+    }
+
+    Printf("  blocks at %08lx and %08lx, the arena at %08lx%s\n", (ULONG)hi1, (ULONG)hi2, (ULONG)lo,
+           (LONG)(((ULONG)hi1 >= 0x40000000UL) ? " (above 1 GB)" : " (NOT above 1 GB: this machine has no memory up there, or exec gave other memory)"));
+
+    /* high to low and low to high: a copy of 64 KB */
+    FillWords((ULONG *)hi1, HIGHSIZE / 4, 11);
+    ClearZone(ZONE_A, ZONE_SIZE, 0);
+    Check("high -> low copy", Run((struct TagItem[]){ { BDJ_Src, (ULONG)hi1 }, { BDJ_Dst, (ULONG)lo }, { BDJ_Length, 0x10000 }, { TAG_DONE, 0 } }), BDERR_OK);
+    Check("high -> low data", CheckWords((ULONG *)lo, 0x10000 / 4, 11), 0);
+
+    FillWords((ULONG *)lo, 0x10000 / 4, 12);
+    FillWords((ULONG *)hi2, HIGHSIZE / 4, 0);
+    Check("low -> high copy", Run((struct TagItem[]){ { BDJ_Src, (ULONG)lo }, { BDJ_Dst, (ULONG)hi2 }, { BDJ_Length, 0x10000 }, { TAG_DONE, 0 } }), BDERR_OK);
+    Check("low -> high data", CheckWords((ULONG *)hi2, 0x10000 / 4, 12), 0);
+
+    /* high to high, unaligned start (the head and the tail around the 128 bit body) */
+    FillWords((ULONG *)hi1, HIGHSIZE / 4, 13);
+    for (i = 0; i < HIGHSIZE / 4; i++)
+        ((ULONG *)hi2)[i] = 0xa5a5a5a5UL;
+    Check("high -> high copy", Run((struct TagItem[]){ { BDJ_Src, (ULONG)hi1 + 4 }, { BDJ_Dst, (ULONG)hi2 + 20 }, { BDJ_Length, 0x8000 - 24 }, { TAG_DONE, 0 } }), BDERR_OK);
+    bad = 0;
+    for (i = 0; i < (0x8000 - 24) / 4; i++)
+        if (((ULONG *)(hi2 + 20))[i] != Pattern(i + 1, 13))
+            bad++;
+    Check("high -> high data", bad, 0);
+    Check("high -> high guard before", ((ULONG *)hi2)[0], 0xa5a5a5a5UL);
+    Check("high -> high guard after", *(ULONG *)(hi2 + 20 + 0x8000 - 24), 0xa5a5a5a5UL);
+
+    /* a rectangle in the high memory: 64 rows of 1000 bytes, pitch 1024 */
+    FillWords((ULONG *)hi1, HIGHSIZE / 4, 14);
+    for (i = 0; i < HIGHSIZE / 4; i++)
+        ((ULONG *)hi2)[i] = 0;
+    Check("high rectangle", Run((struct TagItem[]){ { BDJ_Src, (ULONG)hi1 }, { BDJ_Dst, (ULONG)hi2 }, { BDJ_Length, 1000 }, { BDJ_Rows, 64 },
+                                                     { BDJ_SrcPitch, 1024 }, { BDJ_DstPitch, 1024 }, { TAG_DONE, 0 } }), BDERR_OK);
+    bad = 0;
+    for (i = 0; i < 64 * 1024 / 4; i++)
+    {
+        ULONG col = i % 256;
+
+        if (((ULONG *)hi2)[i] != (col < 250 ? Pattern(i, 14) : 0))
+            bad++;
+    }
+    Check("high rectangle data", bad, 0);
+
+    /* a fill, and a move by whole rows inside the high block */
+    Check("high fill", Run((struct TagItem[]){ { BDJ_Dst, (ULONG)hi2 }, { BDJ_FillValue, 0x12345678UL }, { BDJ_Length, 0x10000 }, { TAG_DONE, 0 } }), BDERR_OK);
+    bad = 0;
+    for (i = 0; i < 0x10000 / 4; i++)
+        if (((ULONG *)hi2)[i] != 0x12345678UL)
+            bad++;
+    Check("high fill data", bad, 0);
+
+    FillWords((ULONG *)hi1, HIGHSIZE / 4, 15);
+    Check("high move down", Run((struct TagItem[]){ { BDJ_Src, (ULONG)hi1 }, { BDJ_Dst, (ULONG)hi1 + 0x4000 }, { BDJ_Length, 1024 }, { BDJ_Rows, 32 },
+                                                     { BDJ_SrcPitch, 2048 }, { BDJ_DstPitch, 2048 }, { BDJ_Move, TRUE }, { TAG_DONE, 0 } }), BDERR_OK);
+    bad = 0;
+    for (i = 0; i < 32; i++)
+    {
+        ULONG k;
+
+        for (k = 0; k < 256; k++)
+            if (((ULONG *)(hi1 + 0x4000 + i * 2048))[k] != Pattern(i * 512 + k, 15))
+                bad++;
+    }
+    Check("high move data", bad, 0);
+
+    FreeHigh(hi1, HIGHSIZE);
+    FreeHigh(hi2, HIGHSIZE);
+}
+
+/* A big job runs on both channels at once. Aborted at random moments, again and again, the job must end (aborted or done), the channels must be free
+   again, and a full run afterwards must be right. */
+static void StepSplit(void)
+{
+    ULONG size = 0x800000, round, spin, bad, seed = 12345, i, e = 0;
+    UBYTE *a = AllocMem(size, MEMF_ANY);
+    UBYTE *b = AllocMem(size, MEMF_ANY);
+    struct BDMAJob *job;
+    ULONG aborted = 0, finished = 0;
+
+    if (a == NULL || b == NULL)
+    {
+        Printf("  (no memory for the test)\n");
+        if (a) FreeMem(a, size);
+        if (b) FreeMem(b, size);
+        return;
+    }
+
+    FillWords((ULONG *)a, size / 4, 21);
+
+    job = BDMA_AllocJobTags(Client, BDJ_Src, (ULONG)a, BDJ_Dst, (ULONG)b, BDJ_Length, size, BDJ_ErrorCode, (ULONG)&e, TAG_DONE);
+    Check("split: the job is accepted", e, BDERR_OK);
+
+    if (job != NULL)
+    {
+        for (round = 0; round < 80; round++)
+        {
+            LONG r;
+
+            BDMA_StartJob(job);
+
+            seed = seed * 1103515245UL + 12345UL;
+            spin = (seed >> 8) % 400000;
+
+            {
+                volatile ULONG k;
+
+                for (k = 0; k < spin; k++)
+                    ;
+            }
+
+            BDMA_AbortJob(job);
+            r = BDMA_WaitJob(job);
+
+            if (r == BDERR_ABORTED)
+                aborted++;
+            else if (r == BDERR_OK)
+                finished++;
+            else
+                Check("split: aborted or done", r, BDERR_ABORTED);
+
+            if (round % 10 == 9)
+                Check("split: a small job after the aborts", Run((struct TagItem[]){ { BDJ_Src, (ULONG)arena + ZONE_A }, { BDJ_Dst, (ULONG)arena + ZONE_B },
+                                                                                     { BDJ_Length, 4096 }, { TAG_DONE, 0 } }), BDERR_OK);
+        }
+
+        Printf("  80 rounds: %ld aborted, %ld finished before the abort\n", (LONG)aborted, (LONG)finished);
+
+        for (i = 0; i < size / 4; i++)
+            ((ULONG *)b)[i] = 0;
+
+        BDMA_StartJob(job);
+        Check("split: a full run", BDMA_WaitJob(job), BDERR_OK);
+        bad = CheckWords((ULONG *)b, size / 4, 21);
+        Check("split: the data of the full run", bad, 0);
+
+        BDMA_FreeJob(job);
+    }
+
+    FreeMem(a, size);
+    FreeMem(b, size);
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
     struct RDArgs *rda;
@@ -828,6 +1049,8 @@ int main(int argc, struct WBStartup *wbmsg)
     if (only < 0 || only == 8) { Printf("step 8: client, job started again, software interrupt reply\n"); StepClient(); }
     if (only < 0 || only == 10) { Printf("step 10: any task waits, timeout, memory of the RTG board\n"); StepWait(); }
     if (only < 0 || only == 9) { Printf("step 9: a client closed with jobs in flight\n"); StepClose(); }
+    if (only < 0 || only == 11) { Printf("step 11: memory above 1 GB (MEMF_REVERSE)\n"); StepHigh(); }
+    if (only < 0 || only == 12) { Printf("step 12: a big job on both channels, aborted at random moments\n"); StepSplit(); }
 
     Printf("%ld failed\n", (LONG)failed);
 
