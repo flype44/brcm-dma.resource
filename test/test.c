@@ -93,9 +93,15 @@ static const struct Case cases[] = {
     { "a copy of a length that is not a multiple of 4",
       { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 62 }, { TAG_DONE, 0 } }, BDERR_OK },
     { "a fill at an address that is not 4 byte aligned",
-      { { BDJ_FillValue, 1 }, { BDJ_Dst, 0x1002 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
-    { "a fill of a length that is not a multiple of 4",
+      { { BDJ_FillValue, 1 }, { BDJ_Dst, 0x1002 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_OK },
+    { "a fill of 4 byte pixels with a length that is not a multiple of 4",
       { { BDJ_FillValue, 1 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 62 }, { TAG_DONE, 0 } }, BDERR_ARGS },
+    { "a fill of 2 byte pixels with a length that is a multiple of 2",
+      { { BDJ_FillValue, 1 }, { BDJ_FillBytes, 2 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 62 }, { TAG_DONE, 0 } }, BDERR_OK },
+    { "a fill of 1 byte pixels with any length",
+      { { BDJ_FillValue, 1 }, { BDJ_FillBytes, 1 }, { BDJ_Dst, 0x2001 }, { BDJ_Length, 63 }, { TAG_DONE, 0 } }, BDERR_OK },
+    { "a fill of 3 byte pixels",
+      { { BDJ_FillValue, 1 }, { BDJ_FillBytes, 3 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 63 }, { TAG_DONE, 0 } }, BDERR_ARGS },
     { "a pitch smaller than the length",
       { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 128 }, { BDJ_Rows, 2 }, { BDJ_DstPitch, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
     { "too many rows",
@@ -1166,6 +1172,82 @@ static void StepOdd(void)
     Check("copies at any byte: every case", wrong, 0);
 }
 
+/* Fills of pixels of 1, 2 and 4 bytes, at any address, with any length that is a whole number of pixels, rows at any pitch: random cases checked byte by byte against
+   a model (the byte j of a row is the byte j mod n of the pixel, in the byte order of the memory: the long word as the 68k writes it). */
+static void StepFill(void)
+{
+    UBYTE *zone = arena + ZONE_A;
+    static UBYTE model[SHIFTZONE];
+    ULONG seed = 777, n, i, r, bad, cases = 0, wrong = 0;
+
+    for (n = 0; n < 1500; n++)
+    {
+        ULONG bytes = 1UL << (Rand(&seed) % 3);                  /* 1, 2 or 4 */
+        ULONG len = bytes * (1 + Rand(&seed) % 700);
+        ULONG rows = 1 + Rand(&seed) % 6;
+        ULONG dp = len + Rand(&seed) % 41;
+        ULONG dstart = 0x4000 + Rand(&seed) % 16;
+        ULONG value = Rand(&seed) * 4099UL + Rand(&seed);
+        BOOL nocache = Rand(&seed) % 4 == 0;
+        UBYTE pixel[4];
+        LONG e;
+
+        /* the pixel in the byte order of the memory */
+        if (bytes == 4)
+        {
+            pixel[0] = value >> 24; pixel[1] = value >> 16; pixel[2] = value >> 8; pixel[3] = value;
+        }
+        else if (bytes == 2)
+        {
+            pixel[0] = value >> 8; pixel[1] = value;
+        }
+        else
+            pixel[0] = value;
+
+        FillWords((ULONG *)zone, SHIFTZONE / 4, 900 + n);
+
+        for (i = 0; i < SHIFTZONE; i++)
+            model[i] = zone[i];
+
+        for (r = 0; r < rows; r++)
+            for (i = 0; i < len; i++)
+                model[dstart + r * dp + i] = pixel[i & (bytes - 1)];
+
+        if (nocache)
+            CacheClearE(zone, SHIFTZONE, CACRF_ClearD);
+
+        if (nocache)
+            e = Run((struct TagItem[]){ { BDJ_FillValue, value }, { BDJ_FillBytes, bytes }, { BDJ_Dst, (ULONG)zone + dstart }, { BDJ_Length, len }, { BDJ_Rows, rows },
+                                        { BDJ_DstPitch, dp }, { BDJ_NoCache, TRUE }, { TAG_DONE, 0 } });
+        else
+            e = Run((struct TagItem[]){ { BDJ_FillValue, value }, { BDJ_FillBytes, bytes }, { BDJ_Dst, (ULONG)zone + dstart }, { BDJ_Length, len }, { BDJ_Rows, rows },
+                                        { BDJ_DstPitch, dp }, { TAG_DONE, 0 } });
+
+        if (nocache)
+            CacheClearE(zone, SHIFTZONE, CACRF_ClearD);
+
+        bad = 0;
+        if (e == BDERR_OK)
+            for (i = 0; i < SHIFTZONE; i++)
+                if (zone[i] != model[i])
+                    bad++;
+
+        cases++;
+
+        if (e != BDERR_OK || bad)
+        {
+            wrong++;
+
+            if (wrong < 10)
+                Printf("FAIL fill %ld byte pixels, len %ld rows %ld dp %ld dst+%ld value %08lx: error %ld, %ld bytes differ\n", (LONG)bytes, (LONG)len, (LONG)rows, (LONG)dp,
+                       (LONG)(dstart - 0x4000), value, e, (LONG)bad);
+        }
+    }
+
+    Printf("  %ld cases, %ld wrong\n", (LONG)cases, (LONG)wrong);
+    Check("fills of 1, 2 and 4 byte pixels: every case", wrong, 0);
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
     struct RDArgs *rda;
@@ -1237,6 +1319,7 @@ int main(int argc, struct WBStartup *wbmsg)
     if (only < 0 || only == 12) { Printf("step 12: a big job on both channels, aborted at random moments\n"); StepSplit(); }
     if (only < 0 || only == 13) { Printf("step 13: a shift inside a row, through the buffer of the channel\n"); StepShift(); }
     if (only < 0 || only == 14) { Printf("step 14: copies that start and end at any byte\n"); StepOdd(); }
+    if (only < 0 || only == 15) { Printf("step 15: fills of pixels of 1, 2 and 4 bytes at any address\n"); StepFill(); }
 
     Printf("%ld failed\n", (LONG)failed);
 

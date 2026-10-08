@@ -95,6 +95,7 @@ struct BDMARequest
     ULONG           bdr_Src;
     ULONG           bdr_Dst;
     ULONG           bdr_Fill;
+    ULONG           bdr_FillBytes;   /* 1, 2 or 4: the pixel that bdr_Fill repeats */
     ULONG           bdr_Length;
     ULONG           bdr_Rows;
     ULONG           bdr_SrcPitch;
@@ -176,6 +177,7 @@ struct BDMAChannel
     ULONG               bc_TestCB;
     ULONG               bc_TestCopied;
     ULONG               bc_Fill;            /* the value that bc_Constant holds (a fill with the same value does not write it again) */
+    ULONG               bc_FillBytes;
     BOOL                bc_FillSet;
     volatile UBYTE      bc_Starting;        /* picked, but the chain is not armed yet: the watchdog leaves it alone, a stop is settled by the starter */
     ULONG               bc_Start;           /* the timer when the slice that runs went on the channel */

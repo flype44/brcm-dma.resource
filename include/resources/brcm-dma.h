@@ -40,7 +40,7 @@ struct BDMAJob;
 /* brcm-dma add job */
 #define BDJ_Src             (BDMA_Dummy + 1)     /* ULONG, address of the first byte to read (not with BDJ_FillValue) */
 #define BDJ_Dst             (BDMA_Dummy + 2)     /* ULONG, address of the first byte to write (required) */
-#define BDJ_FillValue       (BDMA_Dummy + 3)     /* ULONG, a 32 bit value written again and again (instead of BDJ_Src) */
+#define BDJ_FillValue       (BDMA_Dummy + 3)     /* ULONG, a value written again and again (instead of BDJ_Src): a pixel of BDJ_FillBytes bytes in its low bytes */
 #define BDJ_Length          (BDMA_Dummy + 4)     /* ULONG, bytes of a row (required; a multiple of 4 for a fill) */
 #define BDJ_Rows            (BDMA_Dummy + 5)     /* ULONG, number of rows, default 1 */
 #define BDJ_SrcPitch        (BDMA_Dummy + 6)     /* ULONG, bytes between two source rows, default BDJ_Length */
@@ -54,6 +54,7 @@ struct BDMAJob;
 #define BDJ_Strict          (BDMA_Dummy + 15)    /* BOOL, a tag that this version does not know is DMAERR_ARGS, not ignored */
 #define BDJ_Classes         (BDMA_Dummy + 16)    /* ULONG, BDCLASS_*: the classes of channel the job may run on (default: every class that can do it) */
 #define BDJ_Timeout         (BDMA_Dummy + 17)    /* ULONG, microseconds: the longest a slice of the job (1 MB at most) may stay on a channel; 0 = no limit; default 1000000. Over it the channel is stopped and the job is BDERR_TIMEOUT */
+#define BDJ_FillBytes       (BDMA_Dummy + 18)    /* ULONG, bytes of the pixel that BDJ_FillValue repeats: 1, 2 or 4 (default 4); BDJ_Length is a multiple of it */
 
 /* brcm-dma client (BDMA_OpenClientTagList) */
 #define BDC_Name            (BDMA_Dummy + 48)    /* STRPTR, kept for the tools that list the owners (copied) */

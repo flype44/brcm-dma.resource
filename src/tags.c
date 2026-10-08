@@ -31,6 +31,7 @@ LONG BDMA_ParseTags(
         r->bdr_Src       = 0;
         r->bdr_Dst       = 0;
         r->bdr_Fill      = 0;
+        r->bdr_FillBytes = 4;
         r->bdr_Length    = 0;
         r->bdr_Rows      = 1;
         r->bdr_SrcPitch  = 0;
@@ -50,6 +51,7 @@ LONG BDMA_ParseTags(
             case BDJ_Src:           r->bdr_Src = t->ti_Data;         r->bdr_Given |= BDRF_SRC; break;
             case BDJ_Dst:           r->bdr_Dst = t->ti_Data;         r->bdr_Given |= BDRF_DST; break;
             case BDJ_FillValue:     r->bdr_Fill = t->ti_Data;        r->bdr_Given |= BDRF_FILL; break;
+            case BDJ_FillBytes:     r->bdr_FillBytes = t->ti_Data; break;
             case BDJ_Length:        r->bdr_Length = t->ti_Data;      r->bdr_Given |= BDRF_LENGTH; break;
             case BDJ_Rows:          r->bdr_Rows = t->ti_Data;        r->bdr_Given |= BDRF_ROWS; break;
             case BDJ_SrcPitch:      r->bdr_SrcPitch = t->ti_Data;    r->bdr_Given |= BDRF_SRCPITCH; break;
@@ -85,8 +87,9 @@ LONG BDMA_ParseTags(
     }
 
     /* A copy or a move starts and ends at any byte, with any pitch (measured: the DMA writes the bytes of a partial word and leaves the others alone).
-       A fill repeats a 32 bit value from the start of the destination: its address, its length and its pitch are in whole words. */
-    if ((r->bdr_Given & BDRF_FILL) && ((r->bdr_Length & 3) || (r->bdr_Dst & 3) || (r->bdr_Rows > 1 && (r->bdr_DstPitch & 3))))
+       A fill repeats a pixel of 1, 2 or 4 bytes from the start of every row: the row is a whole number of pixels, nothing else is asked. */
+    if ((r->bdr_Given & BDRF_FILL) &&
+        ((r->bdr_FillBytes != 1 && r->bdr_FillBytes != 2 && r->bdr_FillBytes != 4) || (r->bdr_Length & (r->bdr_FillBytes - 1))))
     {
         return BDERR_ARGS;
     }

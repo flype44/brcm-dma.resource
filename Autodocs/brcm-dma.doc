@@ -127,8 +127,11 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 
 	BDJ_Src         ULONG, address of the first byte to read (not with BDJ_FillValue)
 	BDJ_Dst         ULONG, address of the first byte to write (required)
-	BDJ_FillValue   ULONG, a 32 bit value written again and again (instead of BDJ_Src)
-	BDJ_Length      ULONG, bytes of a row (required; a multiple of 4 for a fill)
+	BDJ_FillValue   ULONG, a pixel written again and again (instead of BDJ_Src): its BDJ_FillBytes low bytes, in the byte order of the memory (the long
+	                word as the 68k writes it)
+	BDJ_FillBytes   ULONG, the bytes of that pixel: 1, 2 or 4 (default 4). The pattern starts again with every row; BDJ_Length is a multiple of it, the address
+	                and the pitch are free
+	BDJ_Length      ULONG, bytes of a row (required; for a fill a multiple of BDJ_FillBytes)
 	BDJ_Rows        ULONG, number of rows, default 1, 65535 at most
 	BDJ_SrcPitch    ULONG, bytes between two source rows, default BDJ_Length
 	BDJ_DstPitch    ULONG, bytes between two destination rows, default BDJ_Length
@@ -149,7 +152,7 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 	job             a job, or NULL
 
 	BDERR_UNAVAILABLE   no engine, or no channel of the classes allowed
-	BDERR_ARGS          a missing, wrong or incompatible tag, a fill whose address, length or pitch is not a multiple of 4, a pitch smaller than the length
+	BDERR_ARGS          a missing, wrong or incompatible tag, a fill whose BDJ_FillBytes is not 1, 2 or 4 or does not divide BDJ_Length, a pitch smaller than the length
 	BDERR_RANGE         an address that is not memory
 	BDERR_OVERLAP       the source and the destination overlap (without BDJ_Move, or a row of more than 256 KB with it)
 	BDERR_TOOBIG        too many rows, or a row of a gigabyte

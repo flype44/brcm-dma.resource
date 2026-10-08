@@ -40,7 +40,7 @@
 #define FIRST_40BIT_CHANNEL 11 /* the registers of the node /scb/dma@7e007b00 start at the channel 11 */
 #define LAST_40BIT_CHANNEL  14
 
-#define CONSTANT_SIZE       256
+#define CONSTANT_SIZE       288    /* 256 bytes that a burst reads, and the 3 of the shift of the pattern, to a multiple of 32 */
 #define SELFTEST_SIZE       4096
 
 #define GIC_MIN_VERSION     1
@@ -243,15 +243,20 @@ static VOID Build(
            the other even when the source does not increment: with only 16 bytes the rest of the row got what lay behind them). */
         /* The same value as the last fill of this channel (the usual case: one colour, many rectangles) needs nothing: the constant is in place, and
            the cache is not touched again (a call of the system for the cache costs about 41 us, by line a few). */
-        if (!channel->bc_FillSet || channel->bc_Fill != r->bdr_Fill)
+        if (!channel->bc_FillSet || channel->bc_Fill != r->bdr_Fill || channel->bc_FillBytes != r->bdr_FillBytes)
         {
+            /* the pixel (1, 2 or 4 bytes of the value) repeated over the constant, in the byte order of the memory: the long word as the 68k writes it */
+            ULONG word = r->bdr_FillBytes == 1 ? (r->bdr_Fill & 0xff) * 0x01010101UL :
+                         r->bdr_FillBytes == 2 ? (r->bdr_Fill & 0xffff) * 0x00010001UL : r->bdr_Fill;
+
             for (i = 0; i < CONSTANT_SIZE / 4; i++)
             {
-                channel->bc_Constant[i] = r->bdr_Fill;
+                channel->bc_Constant[i] = word;
             }
 
             BDMA_PushLines((ULONG)channel->bc_Constant, CONSTANT_SIZE);
             channel->bc_Fill = r->bdr_Fill;
+            channel->bc_FillBytes = r->bdr_FillBytes;
             channel->bc_FillSet = TRUE;
         }
     }
@@ -296,7 +301,7 @@ static VOID Build(
             }
 
             c[DMA_CB_TI]   = LE32(0); /* the interrupt of the last block is set below */
-            c[DMA_CB_SRC]  = LE32(fill ? src : s + off[p]);
+            c[DMA_CB_SRC]  = LE32(fill ? src + ((col + off[p]) & (r->bdr_FillBytes - 1)) : s + off[p]);   /* a fill: the pattern restarts with every row */
             c[DMA_CB_SRCI] = LE32(sinfo);
             c[DMA_CB_DST]  = LE32(t + off[p]);
             c[DMA_CB_DSTI] = LE32(info);
