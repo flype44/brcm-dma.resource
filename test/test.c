@@ -118,8 +118,8 @@ static const struct Case cases[] = {
       { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 64 }, { BDJ_Classes, 0 }, { TAG_DONE, 0 } }, BDERR_ARGS },
     { "a class that does not exist",
       { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 64 }, { BDJ_Classes, 0x10 }, { TAG_DONE, 0 } }, BDERR_ARGS },
-    { "a shift inside a row",
-      { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x1000 + 64 }, { BDJ_Length, 128 }, { BDJ_Rows, 2 }, { BDJ_SrcPitch, 256 }, { BDJ_DstPitch, 256 }, { BDJ_Move, TRUE }, { TAG_DONE, 0 } }, BDERR_OVERLAP },
+    { "a shift inside a row (through the buffer of the channel)",
+      { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x1000 + 64 }, { BDJ_Length, 128 }, { BDJ_Rows, 2 }, { BDJ_SrcPitch, 256 }, { BDJ_DstPitch, 256 }, { BDJ_Move, TRUE }, { TAG_DONE, 0 } }, BDERR_OK },
 };
 
 #define NCASES (sizeof(cases) / sizeof(cases[0]))
@@ -982,6 +982,92 @@ static void StepSplit(void)
     FreeMem(b, size);
 }
 
+/* A move whose rows overlap themselves (a shift to the side, with or without rows): the result must be that of a memmove of the whole rectangle,
+   as if the source were read before anything is written. The model is made by the CPU through a copy. Widths, shifts, rows, pitches and alignments
+   are varied; the rest of the zone (before, after and between the rows) must stay as it was. */
+#define SHIFTZONE 0x10000
+
+static ULONG ShiftCase(ULONG start, ULONG width, LONG dx, LONG dy, ULONG rows, ULONG pitch, ULONG seed)
+{
+    UBYTE *zone = arena + ZONE_A;
+    static UBYTE model[SHIFTZONE];
+    static UBYTE temp[SHIFTZONE];
+    ULONG i, r, bad = 0;
+    ULONG src = start;
+    LONG dst = (LONG)start + dy * (LONG)pitch + dx;
+    LONG e;
+
+    FillWords((ULONG *)zone, SHIFTZONE / 4, seed);
+
+    for (i = 0; i < SHIFTZONE; i++)
+        model[i] = zone[i];
+
+    /* the model: the rows are read first, then written */
+    for (r = 0; r < rows; r++)
+        for (i = 0; i < width; i++)
+            temp[r * width + i] = zone[src + r * pitch + i];
+
+    for (r = 0; r < rows; r++)
+        for (i = 0; i < width; i++)
+            model[dst + r * pitch + i] = temp[r * width + i];
+
+    e = Run((struct TagItem[]){ { BDJ_Src, (ULONG)zone + src }, { BDJ_Dst, (ULONG)zone + dst }, { BDJ_Length, width }, { BDJ_Rows, rows },
+                                { BDJ_SrcPitch, pitch }, { BDJ_DstPitch, pitch }, { BDJ_Move, TRUE }, { TAG_DONE, 0 } });
+    if (e != BDERR_OK)
+    {
+        Printf("FAIL shift width %ld dx %ld dy %ld rows %ld pitch %ld start %ld: error %ld\n", (LONG)width, dx, dy, (LONG)rows, (LONG)pitch, (LONG)start, e);
+        return 1;
+    }
+
+    for (i = 0; i < SHIFTZONE; i++)
+        if (zone[i] != model[i])
+            bad++;
+
+    if (bad)
+        Printf("FAIL shift width %ld dx %ld dy %ld rows %ld pitch %ld start %ld: %ld bytes differ\n", (LONG)width, dx, dy, (LONG)rows, (LONG)pitch, (LONG)start, (LONG)bad);
+
+    return bad != 0;
+}
+
+static void StepShift(void)
+{
+    static const ULONG widths[] = { 4, 16, 60, 128, 1000 };
+    static const LONG shifts[] = { 4, -4, 8, -8, 16, -16, 20, -20, 36, -36, 100, -100, 400, -400 };
+    static const LONG dys[] = { 0, 1, -1, 3 };
+    static const ULONG rowss[] = { 1, 2, 8, 20 };
+    ULONG wi, si, di, ri, cases = 0, wrong = 0, seed = 30;
+
+    for (wi = 0; wi < sizeof(widths) / sizeof(widths[0]); wi++)
+    {
+        for (si = 0; si < sizeof(shifts) / sizeof(shifts[0]); si++)
+        {
+            ULONG width = widths[wi];
+            LONG dx = shifts[si];
+
+            if ((ULONG)(dx < 0 ? -dx : dx) >= width && dx != 4 && dx != -4)
+                continue;                      /* a shift of a row or more is a move by whole rows: the other steps */
+
+            for (di = 0; di < sizeof(dys) / sizeof(dys[0]); di++)
+            {
+                for (ri = 0; ri < sizeof(rowss) / sizeof(rowss[0]); ri++)
+                {
+                    ULONG pitch = (width + 31) & ~15UL;
+                    ULONG start = 0x2000 + (cases % 4) * 4;       /* the alignment of the source: 0, 4, 8, 12 */
+
+                    if (pitch < width + 16 && dys[di] != 0)
+                        pitch = width + 16;
+
+                    wrong += ShiftCase(start, width, dx, dys[di], rowss[ri], pitch, seed++);
+                    cases++;
+                }
+            }
+        }
+    }
+
+    Printf("  %ld cases, %ld wrong\n", (LONG)cases, (LONG)wrong);
+    Check("shift inside a row: every case", wrong, 0);
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
     struct RDArgs *rda;
@@ -1051,6 +1137,7 @@ int main(int argc, struct WBStartup *wbmsg)
     if (only < 0 || only == 9) { Printf("step 9: a client closed with jobs in flight\n"); StepClose(); }
     if (only < 0 || only == 11) { Printf("step 11: memory above 1 GB (MEMF_REVERSE)\n"); StepHigh(); }
     if (only < 0 || only == 12) { Printf("step 12: a big job on both channels, aborted at random moments\n"); StepSplit(); }
+    if (only < 0 || only == 13) { Printf("step 13: a shift inside a row, through the buffer of the channel\n"); StepShift(); }
 
     Printf("%ld failed\n", (LONG)failed);
 

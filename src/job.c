@@ -27,6 +27,8 @@ LONG BDMA_CheckRequest(
     ULONG dstbytes, srcbytes = 0;
     BOOL fill = (r->bdr_Given & BDRF_FILL) != 0;
 
+    job->bj_Bounce = 0;
+
     /* no channel of the classes that the job allows */
     if (!(r->bdr_Classes & BDMABase->bdb_Classes))
     {
@@ -60,14 +62,18 @@ LONG BDMA_CheckRequest(
 
         if (r->bdr_Given & BDRF_MOVE)
         {
-            /* by whole rows only:
-               a shift inside a row (less than the width) is refused, 
-               a scroll never does it */
+            /* A shift by whole rows (a scroll) is done by the order of the rows. A shift inside a row (less than the width) is done
+               through the buffer of the channel, which must hold a row. */
             LONG gap = (LONG)r->bdr_Dst - (LONG)r->bdr_Src;
 
             if (gap > -(LONG)length && gap < (LONG)length)
             {
-                return BDERR_OVERLAP;
+                if (length > BDMA_BOUNCE_SIZE)
+                {
+                    return BDERR_OVERLAP;
+                }
+
+                job->bj_Bounce = 1;
             }
 
             job->bj_Reverse = r->bdr_Dst > r->bdr_Src;

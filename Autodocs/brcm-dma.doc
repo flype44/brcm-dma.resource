@@ -132,7 +132,9 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 	BDJ_Rows        ULONG, number of rows, default 1, 65535 at most
 	BDJ_SrcPitch    ULONG, bytes between two source rows, default BDJ_Length
 	BDJ_DstPitch    ULONG, bytes between two destination rows, default BDJ_Length
-	BDJ_Move        BOOL, the areas may overlap by whole rows (a scroll); the pitches must be equal; an overlap inside a row is BDERR_OVERLAP
+	BDJ_Move        BOOL, the areas may overlap (a scroll, a shift to the side); the pitches must be equal; the result is that of a copy of the whole
+	                rectangle that reads everything before it writes (a shift inside a row goes through a buffer of the channel, at about half the
+	                rate); BDERR_OVERLAP only when a row does not fit in that buffer (256 KB)
 	BDJ_NoCache     BOOL, no cache maintenance: for memory that the CPU does not cache, or that the caller looked after
 	BDJ_NoWait      BOOL, BDERR_BUSY (when the job is started) instead of waiting when every channel is busy
 	BDJ_Priority    ULONG, BDPRI_LOW, BDPRI_NORMAL or BDPRI_HIGH, default the priority of the client
@@ -149,7 +151,7 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 	BDERR_UNAVAILABLE   no engine, or no channel of the classes allowed
 	BDERR_ARGS          a missing, wrong or incompatible tag, an address or a length that is not a multiple of 4, a pitch smaller than the length
 	BDERR_RANGE         an address that is not memory
-	BDERR_OVERLAP       the source and the destination overlap (BDJ_Move: inside a row)
+	BDERR_OVERLAP       the source and the destination overlap (without BDJ_Move, or a row of more than 256 KB with it)
 	BDERR_TOOBIG        too many rows, or a row of a gigabyte
 
 	Once started, a job can end with BDERR_BUSY (BDJ_NoWait), BDERR_ABORTED, BDERR_TIMEOUT or BDERR_HW: BDMA_WaitJob() gives it.

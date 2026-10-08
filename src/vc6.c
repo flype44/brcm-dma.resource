@@ -81,6 +81,131 @@ static VOID StopChannel(
     dma_wr(chan, DMA_CS, CS_INT | CS_END | CS_PROT);
 }
 
+/* The chain of a strip of rows of a move that overlaps inside the rows: the rows of the strip are copied into the buffer of the channel (the
+   blocks wait for the response of their writes), then out of it to the destination. All the reads of the strip are made before its first
+   write; the strips follow each other in the order of the rows (the last first when the destination is above the source). A row is a unit.
+   The buffer has the rows at multiples of 16 bytes, so its writes are aligned. */
+static VOID BuildBounce(
+    struct BDMABase *BDMABase,
+    struct BDMAChannel *channel,
+    struct BDMAJob *job)
+{
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    const struct BDMARequest *r = &job->bj_Request;
+    ULONG *cb = channel->bc_Chain;
+    ULONG chain = (ULONG)channel->bc_Chain;
+    ULONG width = r->bdr_Length, height = r->bdr_Rows;
+    ULONG aw = (width + 15) & ~15UL;
+    ULONG first = job->bj_Unit;
+    ULONG n = BDMA_BOUNCE_SIZE / aw, k = 0, i, part;
+
+    job->bj_Units = height;
+
+    if (n > BDMA_BOUNCE_ROWS)
+    {
+        n = BDMA_BOUNCE_ROWS;
+    }
+
+    if (n > height - first)
+    {
+        n = height - first;
+    }
+
+    /* out of the source into the buffer */
+    for (i = 0; i < n; i++)
+    {
+        ULONG row = first + i;
+        ULONG ry = job->bj_Reverse ? height - 1 - row : row;
+        ULONG s = r->bdr_Src + ry * r->bdr_SrcPitch;
+        ULONG d = (ULONG)channel->bc_Bounce + i * aw;
+        ULONG body = width & ~15UL, tail = width - body;
+
+        for (part = 0; part < 2; part++)
+        {
+            ULONG *c = cb + k * DMA_CB_WORDS;
+            ULONG off = part == 0 ? 0 : body;
+            ULONG len = part == 0 ? body : tail;
+            ULONG info = INFO_INC | (part == 0 ? INFO_128_BURST16 : 0);
+
+            if (len == 0)
+            {
+                continue;
+            }
+
+            c[DMA_CB_TI]   = LE32(TI_WAIT_RESP);
+            c[DMA_CB_SRC]  = LE32(s + off);
+            c[DMA_CB_SRCI] = LE32(info);
+            c[DMA_CB_DST]  = LE32(d + off);
+            c[DMA_CB_DSTI] = LE32(info);
+            c[DMA_CB_LEN]  = LE32(len);
+            c[DMA_CB_NEXT] = LE32((chain + (k + 1) * DMA_CB_BYTES) >> 5);
+            c[7] = 0;
+            k++;
+        }
+    }
+
+    /* out of the buffer into the destination: head and tail with 32 bit accesses around a 128 bit body, as for any other job */
+    for (i = 0; i < n; i++)
+    {
+        ULONG row = first + i;
+        ULONG ry = job->bj_Reverse ? height - 1 - row : row;
+        ULONG s = (ULONG)channel->bc_Bounce + i * aw;
+        ULONG t = r->bdr_Dst + ry * r->bdr_DstPitch;
+        ULONG head = (0 - t) & 15, body, tail, off[3], len[3];
+
+        if (head > width)
+        {
+            head = width;
+        }
+
+        body = (width - head) & ~15UL;
+        tail = width - head - body;
+
+        off[0] = 0;
+        off[1] = head;
+        off[2] = head + body;
+
+        len[0] = head;
+        len[1] = body;
+        len[2] = tail;
+
+        for (part = 0; part < 3; part++)
+        {
+            ULONG *c = cb + k * DMA_CB_WORDS;
+            ULONG info = INFO_INC | (part == 1 ? INFO_128_BURST16 : 0);
+
+            if (len[part] == 0)
+            {
+                continue;
+            }
+
+            c[DMA_CB_TI]   = LE32(0);
+            c[DMA_CB_SRC]  = LE32(s + off[part]);
+            c[DMA_CB_SRCI] = LE32(info);
+            c[DMA_CB_DST]  = LE32(t + off[part]);
+            c[DMA_CB_DSTI] = LE32(info);
+            c[DMA_CB_LEN]  = LE32(len[part]);
+            c[DMA_CB_NEXT] = LE32((chain + (k + 1) * DMA_CB_BYTES) >> 5);
+            c[7] = 0;
+            k++;
+        }
+    }
+
+    job->bj_Unit = first + n;
+
+    cb[(k - 1) * DMA_CB_WORDS + DMA_CB_NEXT] = 0;
+    cb[(k - 1) * DMA_CB_WORDS + DMA_CB_TI] |= LE32(TI_INTEN);
+
+    if (DMA_CB_BYTES * k <= BDMA_LINEWISE_MAX)
+    {
+        BDMA_PushLines((ULONG)cb, DMA_CB_BYTES * k);
+    }
+    else
+    {
+        CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
+    }
+}
+
 /* Builds, in the buffer of the channel, the chain of the next slice of the job (the channel is started by Arm()).
    src and dst are physical (the CPU address of RAM and of the RTG memory under Emu68).
    With `reverse` (a move whose destination is above the source) the rows, and the blocks
@@ -103,6 +228,12 @@ static VOID Build(
     ULONG k = 0, part, i;
     ULONG pieces = (width + BDMA_SLICE_BYTES - 1) / BDMA_SLICE_BYTES;     /* units of a row */
     ULONG u, bytes = 0;
+
+    if (job->bj_Bounce)
+    {
+        BuildBounce(BDMABase, channel, job);
+        return;
+    }
 
     job->bj_Units = height * pieces;
 
@@ -465,7 +596,7 @@ static BOOL Start(
 
     /* The control blocks of each channel, the 256 byte constant of each, 
        and 2 x 4 KB for the self test: coherent memory of the GPU, 32 byte aligned */
-    size = BDMABase->bdb_Channels * (BDMA_CHAIN_SIZE + CONSTANT_SIZE) + 2 * SELFTEST_SIZE;
+    size = BDMABase->bdb_Channels * (BDMA_CHAIN_SIZE + CONSTANT_SIZE + BDMA_BOUNCE_SIZE) + 2 * SELFTEST_SIZE;
     
     BDMABase->bdb_Handle = AllocateMemory(MailboxBase, size, 32, 
         MEM_FLAG_COHERENT | 
@@ -502,6 +633,7 @@ static BOOL Start(
         channel->bc_Job = NULL;
         channel->bc_Chain = (ULONG *)(phys + i * BDMA_CHAIN_SIZE);
         channel->bc_Constant = (ULONG *)(phys + BDMABase->bdb_Channels * BDMA_CHAIN_SIZE + i * CONSTANT_SIZE);
+        channel->bc_Bounce = (ULONG *)(phys + BDMABase->bdb_Channels * (BDMA_CHAIN_SIZE + CONSTANT_SIZE) + 2 * SELFTEST_SIZE + i * BDMA_BOUNCE_SIZE);
 
         StopChannel(channel);
 

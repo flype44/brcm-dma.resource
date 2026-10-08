@@ -26,7 +26,7 @@ LONG L_BDMA_SetJobTagList(
     struct Library *UtilityBase = BDMA_OpenUtility(BDMABase);
     struct BDMARequest saved;
     ULONG read_lo, read_hi, write_lo, write_hi;
-    UBYTE reverse;
+    UBYTE reverse, bounce;
     ULONG *error_code;
     LONG error;
 
@@ -47,6 +47,7 @@ LONG L_BDMA_SetJobTagList(
     write_lo = job->bj_WriteLo;
     write_hi = job->bj_WriteHi;
     reverse  = job->bj_Reverse;
+    bounce   = job->bj_Bounce;
 
     error = BDMA_ParseTags(UtilityBase, tagList, &job->bj_Request, TRUE, job->bj_Client->bcl_Priority);
     error_code = job->bj_Request.bdr_ErrorCode;
@@ -64,6 +65,7 @@ LONG L_BDMA_SetJobTagList(
         job->bj_WriteLo = write_lo;
         job->bj_WriteHi = write_hi;
         job->bj_Reverse = reverse;
+        job->bj_Bounce = bounce;
     }
 
     if (error_code != NULL)

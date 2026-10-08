@@ -39,6 +39,11 @@
 #define BDMA_MAX_BLOCKS   (3 * BDMA_SLICE_UNITS)
 #define BDMA_CHAIN_SIZE   (32 * BDMA_MAX_BLOCKS)
 
+/* A move whose rows overlap themselves (a shift to the side by less than the width) goes through a buffer of the channel: strips of rows are
+   copied into it and then out of it. A row must fit (BDMA_BOUNCE_SIZE), a strip is at most BDMA_BOUNCE_ROWS rows (five blocks a row). */
+#define BDMA_BOUNCE_SIZE  0x40000UL
+#define BDMA_BOUNCE_ROWS  700
+
 /* State of a job */
 #define BJS_QUEUED       0
 #define BJS_RUNNING      1
@@ -156,6 +161,7 @@ struct BDMAChannel
     struct Interrupt    bc_Interrupt;       /* is_Data is this structure */
     struct BDMAJob *    bc_Job;             /* the job it runs, NULL when idle */
     ULONG *             bc_Chain;           /* its control blocks (coherent GPU memory, physical address) */
+    ULONG *             bc_Bounce;          /* the buffer of the moves that overlap inside a row (BDMA_BOUNCE_SIZE bytes) */
     ULONG *             bc_Constant;        /* the 256 bytes that a fill reads */
     ULONG               bc_Number;          /* the number of the channel: the registers are at 0xf2007000 + 0x100 * number */
     ULONG               bc_Interruptid;     /* the GIC id */

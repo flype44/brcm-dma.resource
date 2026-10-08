@@ -27,6 +27,7 @@
     volatile UBYTE      bj_Active;          /* slices of the job on channels now (0 to the number of channels): a job that can be split has two at a time */
     volatile UBYTE      bj_InQueue;         /* in the queue: while it still has slices to give to a channel (running or not) */
     volatile LONG       bj_Stop;            /* 0, or the error (BDERR_ABORTED, BDERR_TIMEOUT, BDERR_HW) that ended the job early: no more slices, the starter of a slice settles it */
+    UBYTE               bj_Bounce;          /* a move whose rows overlap themselves: through the buffer of the channel, a strip of rows at a time */
     UBYTE               bj_Reverse;         /* a move whose destination is above the source: the rows go from the last to the first */
     UBYTE               bj_Test;            /* the self test: no statistics, no reply */
     UBYTE               bj_Auto;            /* made by BDMA_AddJobTagList(): freed by the call that ends it */

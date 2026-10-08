@@ -105,3 +105,46 @@ RectFill: **+27% (720p), +41% (1080p), +34% (1200p)** and 76 to 82% fewer CPU cy
 
 - Threshold of the copies: **32768**. Threshold of the fills: **524288** (about 512 KB). The ToolTypes of the machine read `VC6_DMA_THRESHOLD=8192` and no fill threshold.
 - The CPU is left free where the jobs are big: scrolls (-80% of cycles), big fills (-80%). The copies between two bitmaps (`MoveLayer`, the main CPU cost left at 9 to 21M cycles) are the next target, in the driver.
+
+## 5. Shifts to the side, inside the rows (through the buffer of the channel)
+
+`BDJ_Move` with a shift smaller than the width (a window moved by a few pixels, `MoveLayer`; a scroll to the side) used to be refused by the resource and went to the CPU: one job for 377 `MoveLayer`
+(9.5M cycles an operation at 720p). The resource now copies the rows into a buffer of the channel and out of it (about half the rate, still far above the CPU). Threshold of the copies 32768, no fill by DMA:
+
+| Screen | Window | Test | DMA 32768 |
+|---|---|---|---:|
+| 1280x720 | 900x600 | ScrollRaster | 528 (0.88) |
+| 1280x720 | 900x600 | RectFill | 635 (2.84) |
+| 1280x720 | 900x600 | MoveLayer | 252 (1.44) |
+| 1280x720 | 900x600 | SizeLayer | 3037 (0.59) |
+| 1280x720 | 900x600 | Desktop mix | 377 (3.75) |
+| 1280x720 | 300x200 | ScrollRaster | 2663 (0.42) |
+| 1280x720 | 300x200 | RectFill | 5282 (0.34) |
+| 1280x720 | 300x200 | MoveLayer | 1494 (0.58) |
+| 1280x720 | 300x200 | SizeLayer | 4762 (0.38) |
+| 1280x720 | 300x200 | Desktop mix | 2787 (0.54) |
+| 1920x1080 | 1400x800 | ScrollRaster | 274 (1.31) |
+| 1920x1080 | 1400x800 | RectFill | 306 (5.87) |
+| 1920x1080 | 1400x800 | MoveLayer | 129 (2.12) |
+| 1920x1080 | 1400x800 | SizeLayer | 2799 (0.64) |
+| 1920x1080 | 1400x800 | Desktop mix | 189 (7.36) |
+| 1920x1080 | 300x200 | ScrollRaster | 2653 (0.43) |
+| 1920x1080 | 300x200 | RectFill | 5277 (0.34) |
+| 1920x1080 | 300x200 | MoveLayer | 1493 (0.58) |
+| 1920x1080 | 300x200 | SizeLayer | 4717 (0.38) |
+| 1920x1080 | 300x200 | Desktop mix | 2789 (0.54) |
+| 1920x1200 | 1400x900 | ScrollRaster | 244 (1.42) |
+| 1920x1200 | 1400x900 | RectFill | 272 (6.62) |
+| 1920x1200 | 1400x900 | MoveLayer | 115 (2.32) |
+| 1920x1200 | 1400x900 | SizeLayer | 3163 (0.57) |
+| 1920x1200 | 1400x900 | Desktop mix | 167 (8.30) |
+| 1920x1200 | 300x200 | ScrollRaster | 2653 (0.43) |
+| 1920x1200 | 300x200 | RectFill | 5286 (0.34) |
+| 1920x1200 | 300x200 | MoveLayer | 1491 (0.58) |
+| 1920x1200 | 300x200 | SizeLayer | 4767 (0.38) |
+| 1920x1200 | 300x200 | Desktop mix | 2788 (0.54) |
+
+Against the same machine without the buffer (section 1, threshold 32768): **MoveLayer +34% (720p), +36% (1080p), +35% (1200p), x2 with a 300x200 window**, and 85 to 89% fewer CPU cycles
+(9.55M to 1.44M at 720p, 18.8M to 2.1M at 1080p, 21.0M to 2.3M at 1200p, 2.40M to 0.58M for 300x200). The desktop mix, which moves windows, scrolls and draws: +7% with the big window and +32% with the
+small one, with 22% and 35% fewer cycles. `ScrollRaster` (a vertical scroll) and `RectFill` do not change. `brcm-dma-test` step 13 checks 672 shifts (widths 4 to 1000, shifts of 4 to 400 bytes
+to both sides, with 0, 1, -1 and 3 rows of vertical shift, 1 to 20 rows, alignments of the source) against a memmove made by the CPU: 0 wrong.

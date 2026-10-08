@@ -49,6 +49,7 @@
 
 /* DMA_CB_TI */
 #define TI_INTEN                (1UL << 0)  /* interrupt when this block is done */
+#define TI_WAIT_RESP            (1UL << 2)  /* wait for the response of the writes of this block before the next one starts */
 
 /* DMA_CB_SRCI, DMA_CB_DSTI */
 #define INFO_INC                (1UL << 12) /* the address increments */
