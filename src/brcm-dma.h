@@ -28,6 +28,7 @@
 
 /* The channels the resource keeps: the 40 bit ones that the ARM may use (device tree mask 0x3000: 12 and 13) */
 #define BDMA_MAX_CHANNELS 2
+#define BDMA_SIZE_BUCKETS 5      /* the histogram of the jobs: up to 64 bytes, 4 KB, 32 KB, 1 MB, more */
 
 /* Up to three control blocks of 32 bytes a row: a head and a tail of 32 bit accesses around a body of 128 bit accesses */
 /* A job runs in slices: units of at most BDMA_SLICE_BYTES (a piece of a row), about a megabyte, which is about a millisecond of the channel, and at most
@@ -133,6 +134,15 @@ struct BDMAStatus
     ULONG           bds_Classes;
     ULONG           bds_VideoBase;
     ULONG           bds_VideoSize;
+    ULONG           bds_QueueMax;
+    ULONG           bds_WaitMaxUs;
+    ULONG           bds_Aborts;
+    ULONG           bds_Timeouts;
+    ULONG           bds_Busy;
+    ULONG           bds_Slices;
+    ULONG           bds_Deferred;
+    ULONG           bds_BusyMs[BDMA_MAX_CHANNELS];
+    ULONG           bds_Size[BDMA_SIZE_BUCKETS];
 };
 
 struct BDMABase;
@@ -156,6 +166,8 @@ struct BDMAChannel
     ULONG               bc_TestCS;          /* the registers of the channel when the self test gave up, and whether the data arrived */
     ULONG               bc_TestCB;
     ULONG               bc_TestCopied;
+    ULONG               bc_BusyUs;          /* the time its slices ran: milliseconds and the microseconds that do not make one yet */
+    ULONG               bc_BusyMs;
 };
 
 struct BDMABackend;
@@ -191,6 +203,15 @@ struct BDMABase
     ULONG                   bdb_MegaBytes;
     ULONG                   bdb_ByteRemainder;
     ULONG                   bdb_Failures;
+    ULONG                   bdb_Waiting;         /* jobs in the queue now, and the most there ever were */
+    ULONG                   bdb_QueueMax;
+    ULONG                   bdb_WaitMax;         /* the longest stay in the queue before a slice went on a channel, in microseconds */
+    ULONG                   bdb_Aborts;
+    ULONG                   bdb_Timeouts;
+    ULONG                   bdb_Busy;            /* BDJ_NoWait jobs refused for lack of an idle channel */
+    ULONG                   bdb_Slices;          /* times a job went back to the queue for its next slice */
+    ULONG                   bdb_Deferred;        /* jobs that held back because of a conflict while a channel was idle */
+    ULONG                   bdb_Size[BDMA_SIZE_BUCKETS];
     ULONG                   bdb_Classes;         /* BDCLASS_*: the classes of the channels it manages (set when the engine runs) */
     /* the clients (under bdb_Lock), the jobs that are over and wait for the cache and the reply, the software interrupt that does both */
     struct MinList          bdb_Clients;
@@ -227,6 +248,14 @@ ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"));
 /* The engine (engine.c) */
 BOOL BDMA_StartEngine(struct BDMABase *BDMABase);
 VOID BDMA_Run(struct BDMABase *BDMABase);
+/* A job enters the queue (the caller has the interrupts off) */
+#define BDMA_ENQUEUED(base, job) \
+    do { \
+        (job)->bj_Queued = timer_now(); \
+        (job)->bj_Deferred = 0; \
+        if (++(base)->bdb_Waiting > (base)->bdb_QueueMax) (base)->bdb_QueueMax = (base)->bdb_Waiting; \
+    } while (0)
+
 VOID BDMA_StartOnChannel(struct BDMABase *BDMABase, struct BDMAChannel *channel, struct BDMAJob *job);
 VOID BDMA_ChannelEnded(struct BDMABase *BDMABase, struct BDMAChannel *channel, LONG error);
 

@@ -15,6 +15,7 @@
 #include <common/compiler.h>
 
 #include "brcm-dma.h"
+#include "hw-vc4.h"     /* timer_now() */
 #include "cache.h"
 
 /* The data cache is not coherent with the DMA:
@@ -104,6 +105,7 @@ VOID L_BDMA_StartJob(
 
         if (!idle)
         {
+            BDMABase->bdb_Busy++;
             job->bj_State = BJS_FAILED;
             job->bj_Error = BDERR_BUSY;
             BDMA_ReplyJob(BDMABase, job);
@@ -129,6 +131,7 @@ VOID L_BDMA_StartJob(
     job->bj_Sequence = ++BDMABase->bdb_Sequence;
     job->bj_State = BJS_QUEUED;
     AddTail((struct List *)&BDMABase->bdb_Queue, BDMA_JOBNODE(job));
+    BDMA_ENQUEUED(BDMABase, job);
     Enable();
 
     BDMA_Run(BDMABase);

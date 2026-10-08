@@ -334,10 +334,24 @@ brcm-dma.resource/BDMA_QueryInfoTagList             brcm-dma.resource/BDMA_Query
 	                BDI_Classes      BDCLASS_*, the classes of those channels
 	                BDI_VideoBase    the memory of the RTG board, which the CPU does not cache (0 if none)
 	                BDI_VideoSize    its size
-	                BDI_MaxRows      the most rows of a rectangle
+	                BDI_MaxRows      the limit: the most rows a rectangle job may have
 	                BDI_Jobs         jobs done since the start
 	                BDI_MegaBytes    megabytes moved since the start
 	                BDI_Failures     jobs that failed
+	                BDI_QueueMax     the most jobs ever waiting in the queue at once
+	                BDI_WaitMaxUs    the longest stay in the queue before a slice went on a channel, microseconds
+	                BDI_Aborts       jobs aborted
+	                BDI_Timeouts     slices given up by the watchdog
+	                BDI_Busy         BDJ_NoWait jobs refused (BDERR_BUSY)
+	                BDI_Slices       times a big job went back to the queue for its next slice
+	                BDI_Deferred     jobs held back by a conflict while a channel was idle
+	                BDI_BusyMs0      milliseconds the first channel ran slices
+	                BDI_BusyMs1      the same, second channel
+	                BDI_Size64       jobs done of up to 64 bytes (length x rows)
+	                BDI_Size4K       of up to 4 KB
+	                BDI_Size32K      of up to 32 KB
+	                BDI_Size1M       of up to 1 MB
+	                BDI_SizeBig      of more than 1 MB
 
    RESULTS
 	answers         the number of values written

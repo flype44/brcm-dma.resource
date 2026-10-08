@@ -103,13 +103,28 @@ struct BDMAJob;
 #define BDI_Model           (BDMA_Dummy + 35)    /* ULONG *, BDM_* */
 #define BDI_Features        (BDMA_Dummy + 36)    /* ULONG *, BDFF_* */
 #define BDI_Channels        (BDMA_Dummy + 37)    /* ULONG *, bit mask of the channels managed */
-#define BDI_MaxRows         (BDMA_Dummy + 38)    /* ULONG *, rows of the biggest rectangle */
+#define BDI_MaxRows         (BDMA_Dummy + 38)    /* ULONG *, the limit: the most rows a rectangle job may have */
 #define BDI_Jobs            (BDMA_Dummy + 39)    /* ULONG *, jobs done since the start */
 #define BDI_MegaBytes       (BDMA_Dummy + 40)    /* ULONG *, megabytes moved since the start */
 #define BDI_Failures        (BDMA_Dummy + 41)    /* ULONG *, jobs that failed */
 #define BDI_Classes         (BDMA_Dummy + 42)    /* ULONG *, BDCLASS_*: the classes of the channels that the resource manages */
 #define BDI_VideoBase       (BDMA_Dummy + 43)    /* ULONG *, the memory of the RTG board (the CPU does not cache it: no cache maintenance there); 0 if none */
 #define BDI_VideoSize       (BDMA_Dummy + 44)    /* ULONG *, its size */
+/* Statistics since the start of the OS (no reset; read twice and subtract) */
+#define BDI_QueueMax        (BDMA_Dummy + 45)    /* ULONG *, the most jobs that were ever waiting in the queue at the same time */
+#define BDI_WaitMaxUs       (BDMA_Dummy + 46)    /* ULONG *, the longest stay in the queue before a slice went on a channel, in microseconds */
+#define BDI_Aborts          (BDMA_Dummy + 47)    /* ULONG *, jobs aborted */
+#define BDI_Timeouts        (BDMA_Dummy + 48)    /* ULONG *, slices given up by the watchdog (BDERR_TIMEOUT) */
+#define BDI_Busy            (BDMA_Dummy + 49)    /* ULONG *, BDJ_NoWait jobs refused for lack of an idle channel (BDERR_BUSY) */
+#define BDI_Slices          (BDMA_Dummy + 50)    /* ULONG *, times a big job went back to the queue for its next slice */
+#define BDI_Deferred        (BDMA_Dummy + 51)    /* ULONG *, jobs that held back because of a conflict (order of the footprints) while a channel was idle */
+#define BDI_BusyMs0         (BDMA_Dummy + 52)    /* ULONG *, milliseconds the first channel of BDI_Channels ran slices */
+#define BDI_BusyMs1         (BDMA_Dummy + 53)    /* ULONG *, the same for the second channel */
+#define BDI_Size64          (BDMA_Dummy + 54)    /* ULONG *, jobs done of up to 64 bytes (bytes of a job = length x rows) */
+#define BDI_Size4K          (BDMA_Dummy + 55)    /* ULONG *, of up to 4 KB */
+#define BDI_Size32K         (BDMA_Dummy + 56)    /* ULONG *, of up to 32 KB */
+#define BDI_Size1M          (BDMA_Dummy + 57)    /* ULONG *, of up to 1 MB */
+#define BDI_SizeBig         (BDMA_Dummy + 58)    /* ULONG *, of more than 1 MB */
 
 /* brcm-dma models */
 #define BDM_UNKNOWN    0

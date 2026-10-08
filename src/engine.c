@@ -154,6 +154,12 @@ static struct BDMAChannel *Pick(
             }
         }
 
+        if (!free && !j->bj_Deferred)
+        {
+            j->bj_Deferred = 1;
+            BDMABase->bdb_Deferred++;
+        }
+
         if (free)
         {
             best = j;
@@ -166,6 +172,13 @@ static struct BDMAChannel *Pick(
     }
 
     Remove(BDMA_JOBNODE(best));
+    BDMABase->bdb_Waiting--;
+
+    if (timer_now() - best->bj_Queued > BDMABase->bdb_WaitMax)
+    {
+        BDMABase->bdb_WaitMax = timer_now() - best->bj_Queued;
+    }
+
     best->bj_State = BJS_RUNNING;   /* the time starts when StartChain() arms the channel, not here: until then the job is bj_Starting */
     best->bj_Starting = 1;
     best->bj_AbortReq = 0;
@@ -195,6 +208,7 @@ VOID BDMA_StartOnChannel(
     if (job->bj_AbortReq)
     {
         channel->bc_Job = NULL;
+        BDMABase->bdb_Aborts++;
         job->bj_State = BJS_ABORTED;
         job->bj_Error = BDERR_ABORTED;
         job->bj_Done = 0;
@@ -267,6 +281,7 @@ static ULONG Tick(
             job->bj_Error = BDERR_TIMEOUT;
             job->bj_Done = 0;
             BDMABase->bdb_Failures++;
+            BDMABase->bdb_Timeouts++;
             Enable();
 
             BDMA_ReplyJob(BDMABase, job);
@@ -298,6 +313,7 @@ static VOID Requeue(
     struct BDMAJob *o;
 
     job->bj_State = BJS_QUEUED;
+    BDMA_ENQUEUED(BDMABase, job);
 
     for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
          o->bj_Node.mln_Succ != NULL; 
@@ -323,6 +339,7 @@ static VOID Finish(
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     const struct BDMARequest *r = &job->bj_Request;
+    ULONG bytes;
 
     job->bj_Error = error;
     job->bj_State = error == BDERR_OK ? BJS_DONE : BJS_FAILED;
@@ -334,6 +351,8 @@ static VOID Finish(
         if (error == BDERR_OK)
         {
             BDMABase->bdb_Jobs++;
+            bytes = r->bdr_Length * r->bdr_Rows;
+            BDMABase->bdb_Size[bytes <= 64 ? 0 : bytes <= 4096 ? 1 : bytes <= 32768 ? 2 : bytes <= 1048576 ? 3 : 4]++;
             BDMABase->bdb_ByteRemainder += r->bdr_Length * r->bdr_Rows;
             BDMABase->bdb_MegaBytes += BDMABase->bdb_ByteRemainder >> 20;
             BDMABase->bdb_ByteRemainder &= (1UL << 20) - 1;
@@ -380,9 +399,18 @@ VOID BDMA_ChannelEnded(
 
     if (job != NULL)
     {
+        channel->bc_BusyUs += timer_now() - job->bj_Start;
+
+        if (channel->bc_BusyUs >= 1000)
+        {
+            channel->bc_BusyMs += channel->bc_BusyUs / 1000;
+            channel->bc_BusyUs %= 1000;
+        }
+
         if (error == BDERR_OK && job->bj_Unit < job->bj_Units)
         {
             /* another slice: the job waits its turn again, a more urgent one may go first */
+            BDMABase->bdb_Slices++;
             Requeue(BDMABase, job);
         }
         else

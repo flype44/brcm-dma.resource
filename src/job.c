@@ -117,6 +117,7 @@ void BDMA_AbortInternal(
     if (job->bj_State == BJS_QUEUED)
     {
         Remove(BDMA_JOBNODE(job));
+        BDMABase->bdb_Waiting--;
         aborted = TRUE;
     }
     else if (job->bj_State == BJS_RUNNING && job->bj_Starting)
@@ -136,6 +137,7 @@ void BDMA_AbortInternal(
 
     if (aborted)
     {
+        BDMABase->bdb_Aborts++;
         job->bj_State = BJS_ABORTED;
         job->bj_Error = BDERR_ABORTED;
         job->bj_Done = 0;

@@ -172,6 +172,20 @@ ULONG BDMA_FillQuery(
             case BDI_Classes:   value = s->bds_Classes; break;
             case BDI_VideoBase: value = s->bds_VideoBase; break;
             case BDI_VideoSize: value = s->bds_VideoSize; break;
+            case BDI_QueueMax:  value = s->bds_QueueMax; break;
+            case BDI_WaitMaxUs: value = s->bds_WaitMaxUs; break;
+            case BDI_Aborts:    value = s->bds_Aborts; break;
+            case BDI_Timeouts:  value = s->bds_Timeouts; break;
+            case BDI_Busy:      value = s->bds_Busy; break;
+            case BDI_Slices:    value = s->bds_Slices; break;
+            case BDI_Deferred:  value = s->bds_Deferred; break;
+            case BDI_BusyMs0:   value = s->bds_BusyMs[0]; break;
+            case BDI_BusyMs1:   value = s->bds_BusyMs[1]; break;
+            case BDI_Size64:    value = s->bds_Size[0]; break;
+            case BDI_Size4K:    value = s->bds_Size[1]; break;
+            case BDI_Size32K:   value = s->bds_Size[2]; break;
+            case BDI_Size1M:    value = s->bds_Size[3]; break;
+            case BDI_SizeBig:   value = s->bds_Size[4]; break;
             default: continue;
         }
 

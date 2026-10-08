@@ -23,6 +23,7 @@ ULONG L_BDMA_QueryInfoTagList(
     struct Library *UtilityBase = BDMA_OpenUtility(BDMABase);
     struct BDMAStatus status;
     BOOL available;
+    ULONG i;
 
     if (UtilityBase == NULL)
     {
@@ -47,11 +48,26 @@ ULONG L_BDMA_QueryInfoTagList(
     status.bds_Jobs      = BDMABase->bdb_Jobs;
     status.bds_MegaBytes = BDMABase->bdb_MegaBytes;
     status.bds_Failures  = BDMABase->bdb_Failures;
+    status.bds_QueueMax  = BDMABase->bdb_QueueMax;
+    status.bds_WaitMaxUs = BDMABase->bdb_WaitMax;
+    status.bds_Aborts    = BDMABase->bdb_Aborts;
+    status.bds_Timeouts  = BDMABase->bdb_Timeouts;
+    status.bds_Busy      = BDMABase->bdb_Busy;
+    status.bds_Slices    = BDMABase->bdb_Slices;
+    status.bds_Deferred  = BDMABase->bdb_Deferred;
+
+    for (i = 0; i < BDMA_MAX_CHANNELS; i++)
+    {
+        status.bds_BusyMs[i] = BDMABase->bdb_Channel[i].bc_BusyMs;
+    }
+
+    for (i = 0; i < BDMA_SIZE_BUCKETS; i++)
+    {
+        status.bds_Size[i] = BDMABase->bdb_Size[i];
+    }
 
     if (available)
     {
-        ULONG i;
-
         for (i = 0; i < BDMABase->bdb_Channels; i++)
         {
             if (BDMABase->bdb_Channel[i].bc_Registered)
