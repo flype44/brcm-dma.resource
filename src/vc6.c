@@ -196,11 +196,7 @@ static VOID BuildBounce(
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_NEXT] = 0;
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_TI] |= LE32(TI_INTEN);
 
-    if (DMA_CB_BYTES * k <= BDMA_LINEWISE_MAX)
-    {
-        BDMA_PushLines((ULONG)cb, DMA_CB_BYTES * k);
-    }
-    else
+    if (!BDMA_PushRange((ULONG)cb, DMA_CB_BYTES * k))
     {
         CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
     }
@@ -319,11 +315,7 @@ static VOID Build(
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_NEXT] = 0;
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_TI] |= LE32(TI_INTEN);
     
-    if (DMA_CB_BYTES * k <= BDMA_LINEWISE_MAX)
-    {
-        BDMA_PushLines((ULONG)cb, DMA_CB_BYTES * k);
-    }
-    else
+    if (!BDMA_PushRange((ULONG)cb, DMA_CB_BYTES * k))
     {
         CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
     }

@@ -21,7 +21,7 @@
 /* The data cache is not coherent with the DMA:
    write back what the CPU wrote and drop the lines before the transfer
    (the software interrupt that replies drops them again after it).
-   A small area line by line, a big one by the call of the system (CachePreDMA() 
+   A small area line by line, a medium one page by page, a very big one by the call of the system (CachePreDMA()
    gives back the length of the contiguous piece it handled: loop until the area is done).
 */
 static VOID CachePre(
@@ -32,9 +32,8 @@ static VOID CachePre(
 {
     ULONG first = 1;
 
-    if (bytes <= BDMA_LINEWISE_MAX)
+    if (BDMA_PushRange(address, bytes))
     {
-        BDMA_PushLines(address, bytes);
         return;
     }
 

@@ -202,6 +202,7 @@ static ULONG Address(ULONG tag, ULONG value)
         case 0x1002: return (ULONG)arena + ZONE_A + 2;
         case 0x1000 + 64: return (ULONG)arena + ZONE_A + 64;
         case 0x2000: return (ULONG)arena + ZONE_B;
+        case 0x2001: return (ULONG)arena + ZONE_B + 1;
         case 0x3000: return (ULONG)arena + ZONE_C;
         default: return value;
     }

@@ -167,11 +167,7 @@ ULONG BDMA_DoneCode(
         {
             ULONG bytes = job->bj_WriteHi - job->bj_WriteLo;
 
-            if (bytes <= BDMA_LINEWISE_MAX)
-            {
-                BDMA_DropLines(job->bj_WriteLo, bytes);
-            }
-            else
+            if (!BDMA_DropRange(job->bj_WriteLo, bytes))
             {
                 LONG l = bytes;
                 CachePostDMA((APTR)job->bj_WriteLo, &l, 0);

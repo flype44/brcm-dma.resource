@@ -90,10 +90,10 @@ writes over or reads from; the result is that of running them one by one). Best 
 
 **Second channel (opportunistic).** A job whose reads and writes do not overlap (a copy, a fill, a rectangle, not a scroll inside a bitmap) may have two slices on the two channels at once. The second slice goes to an idle channel only when no other job can use it: nothing is taken away from the other clients, and a job that arrives meanwhile waits at most one slice. Measured on the Pi 4B: a big copy goes from 1.0 to 1.67 GB/s, a fill from 1.25 to 1.98 GB/s. An abort, a timeout or a hardware error stops the slices of the job on both channels.
 
-**Completion.** The channel interrupt acknowledges, ends or requeues the job, and starts the next ones without a semaphore. A small job (up to 32 KB written) does its cache work and replies in the
-interrupt; a bigger one through a software interrupt (the system cache call is not for interrupt level).
+**Completion.** The channel interrupt acknowledges, ends or requeues the job, and starts the next ones without a semaphore. A job that writes up to 128 KB does its cache work and replies in the
+interrupt (a few microseconds of pages); a bigger one through a software interrupt (the call of the system, or many pages, is too long for interrupt level).
 
-**Cache (R6).** `CachePreDMA`-equivalent before the transfer, invalidate after it, before the reply; by cache line below 32 KB (a 64 byte job costs ~49 us instead of ~280), system calls above.
+**Cache (R6).** `CachePreDMA`-equivalent before the transfer, invalidate after it, before the reply; by cache line up to 1 KB, by page (`CPUSHP`, 4 KB an instruction) up to 512 KB, the system calls above. On this machine the system calls are the `CPUSHA` of the ROM (the whole data cache, L1 and L2, purged: a fixed 41 us and a loss for every task), see `src/cache.h` for the measures.
 No maintenance for the RTG memory or with `BDJ_NoCache`.
 
 **Errors and recovery.** A hardware error ends the job with `BDERR_HW`. A watchdog (vertical blank server, 20 ms resolution) gives up a slice older than `BDJ_Timeout` (default 1 s, 0 = none):
