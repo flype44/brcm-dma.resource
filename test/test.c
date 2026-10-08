@@ -1293,6 +1293,122 @@ static void StepFill(void)
     Check("fills of 1, 2 and 4 byte pixels: every case", wrong, 0);
 }
 
+/* The 4 MB of the RAM board of Emu68 (dtoverlay z2ram): are the addresses of the 68k the ones that the DMA uses? Read only. The CPU writes a
+   pattern in a block taken from that memory, the DMA reads it into a block of fast memory that step 11 proved, and the two are compared. A
+   resource with the guard refuses the job (BDERR_RANGE): that is told, it is not a failure. */
+static void StepZ2(void)
+{
+    ULONG words = 1024, bytes = words * 4, i, bad = 0, error = 0xdeadbeef;
+    ULONG *z2, *back = (ULONG *)(arena + ZONE_A);
+    struct BDMAJob *job;
+
+    z2 = AllocMem(bytes, MEMF_PUBLIC | MEMF_FAST | MEMF_24BITDMA);
+    if (z2 == NULL)
+    {
+        Printf("  (no fast block with MEMF_24BITDMA: skipped)\n");
+        return;
+    }
+
+    for (i = 0; i < words; i++)
+    {
+        z2[i] = 0xC0DE0000UL + i * 0x1001UL;
+        back[i] = 0;
+    }
+    CacheClearE(z2, bytes, CACRF_ClearD);
+    CacheClearE(back, bytes, CACRF_ClearD);
+
+    job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)z2, BDJ_Dst, (ULONG)back, BDJ_Length, bytes, BDJ_ErrorCode, (ULONG)&error, TAG_DONE);
+    if (job == NULL)
+    {
+        Printf("  block at %08lx: the job was refused, error %ld (BDERR_RANGE is %ld)\n", (LONG)z2, (LONG)error, (LONG)BDERR_RANGE);
+    }
+    else
+    {
+        error = BDMA_WaitJob(job);
+        CacheClearE(back, bytes, CACRF_ClearD);
+        for (i = 0; i < words; i++)
+            if (back[i] != z2[i])
+                bad++;
+        Printf("  block at %08lx: the DMA gave back %ld of %ld words as the CPU wrote them (error %ld)\n", (LONG)z2, (LONG)(words - bad), (LONG)words, (LONG)error);
+        Check("Z2 RAM: the DMA reads the memory that the CPU wrote", bad, 0);
+    }
+
+    FreeMem(z2, bytes);
+}
+
+/* Run by Supervisor(): MOVEC is not for the user mode (it reboots the machine under Emu68) */
+extern ULONG TestReadVBR(void);
+
+__asm__(
+    "       .text\n"
+    "       .even\n"
+    "       .globl  _TestReadVBR\n"
+    "_TestReadVBR:\n"
+    "       movec   vbr,d0\n"
+    "       rte\n"
+);
+
+/* THE GUARD of the resource, on request only (STEP 17): with a resource that has no guard, these jobs are accepted and the DMA writes in the
+   Chip RAM or on the bus of the Amiga, which freezes the machine. Not in the default run. */
+static void StepGuard(void)
+{
+    /* the bus of the Amiga is not memory of the Pi: a job there is refused, as source and as destination (the Chip RAM, below 2 MB; the
+       custom chips and the CIAs; the vector table at 0; the end of the 24 bit space from 0xA00000) */
+    {
+        static const ULONG bus[] = { 0x00000000, 0x00000400, 0x00100000, 0x00BFE001, 0x00DFF000, 0x00F80000 };
+        APTR chip = AllocMem(4096, MEMF_CHIP);
+        ULONG i, error;
+        struct BDMAJob *job;
+
+        if (chip != NULL)
+        {
+            error = 0xdeadbeef;
+            job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, (ULONG)chip, BDJ_Length, 4096, BDJ_ErrorCode, (ULONG)&error, TAG_DONE);
+            Check("Chip RAM as destination: refused", error, BDERR_RANGE);
+            if (job != NULL)
+                BDMA_WaitJob(job);
+
+            error = 0xdeadbeef;
+            job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)chip, BDJ_Dst, (ULONG)arena + ZONE_B, BDJ_Length, 4096, BDJ_ErrorCode, (ULONG)&error, TAG_DONE);
+            Check("Chip RAM as source: refused", error, BDERR_RANGE);
+            if (job != NULL)
+                BDMA_WaitJob(job);
+
+            FreeMem(chip, 4096);
+        }
+        else
+            Printf("  (no Chip RAM to try: skipped)\n");
+
+        for (i = 0; i < sizeof(bus) / sizeof(bus[0]); i++)
+        {
+            error = 0xdeadbeef;
+            job = BDMA_AddJobTags(Client, BDJ_FillValue, 0, BDJ_Dst, bus[i], BDJ_Length, 16, BDJ_ErrorCode, (ULONG)&error, TAG_DONE);
+            Check("address of the Amiga bus as destination: refused", error, BDERR_RANGE);
+            if (job != NULL)
+                BDMA_WaitJob(job);
+        }
+    }
+
+    /* the table of the vectors of the 68k, wherever the VBR puts it (on the machine of the author: the last kilobyte of the big fast region,
+       so fast memory that the DMA reaches, which only this rule keeps it out of). Read, not written: if the guard failed, nothing is lost. */
+    {
+        ULONG vbr = Supervisor((ULONG (*)())TestReadVBR), error;
+        static const ULONG offset[] = { 0, 0x3FC };
+        ULONG i;
+        struct BDMAJob *job;
+
+        Printf("  VBR: %08lx\n", (LONG)vbr);
+        for (i = 0; i < sizeof(offset) / sizeof(offset[0]); i++)
+        {
+            error = 0xdeadbeef;
+            job = BDMA_AddJobTags(Client, BDJ_Src, vbr + offset[i], BDJ_Dst, (ULONG)arena + ZONE_B, BDJ_Length, 4, BDJ_ErrorCode, (ULONG)&error, TAG_DONE);
+            Check("the table of the vectors (VBR) as source: refused", error, BDERR_RANGE);
+            if (job != NULL)
+                BDMA_WaitJob(job);
+        }
+    }
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
     struct RDArgs *rda;
@@ -1365,6 +1481,8 @@ int main(int argc, struct WBStartup *wbmsg)
     if (only < 0 || only == 13) { Printf("step 13: a shift inside a row, through the buffer of the channel\n"); StepShift(); }
     if (only < 0 || only == 14) { Printf("step 14: copies that start and end at any byte\n"); StepOdd(); }
     if (only < 0 || only == 15) { Printf("step 15: fills of pixels of 1, 2 and 4 bytes at any address\n"); StepFill(); }
+    if (only < 0 || only == 16) { Printf("step 16: the RAM board of Emu68 (Z2), read by the DMA\n"); StepZ2(); }
+    if (only == 17) { Printf("step 17: the guard of the resource (needs a resource that has it)\n"); StepGuard(); }
 
     Printf("%ld failed\n", (LONG)failed);
 

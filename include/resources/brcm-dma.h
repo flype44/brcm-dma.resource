@@ -90,7 +90,7 @@ struct BDMAJob;
 #define BDERR_OK           0
 #define BDERR_UNAVAILABLE  1   /* no engine on this machine, or it did not prove itself */
 #define BDERR_ARGS         2   /* a missing, wrong or incompatible tag, alignment, size, pitch */
-#define BDERR_RANGE        3   /* outside the memory */
+#define BDERR_RANGE        3   /* outside the memory, or in an address that the DMA of the Pi does not reach (Chip RAM, below 2 MB, 0xA00000-0xFFFFFF, the 68k vectors, a board that is not the RAM of Emu68) */
 #define BDERR_OVERLAP      4
 #define BDERR_TOOBIG       5
 #define BDERR_BUSY         6

@@ -153,7 +153,7 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 
 	BDERR_UNAVAILABLE   no engine, or no channel of the classes allowed
 	BDERR_ARGS          a missing, wrong or incompatible tag, a fill whose BDJ_FillBytes is not 1, 2 or 4 or does not divide BDJ_Length, a pitch smaller than the length
-	BDERR_RANGE         an address that is not memory
+	BDERR_RANGE         an address that is not memory, or that the DMA of the Pi does not reach: anything that is not fast memory (MEMF_FAST), the Chip RAM and everything below 2 MB, the memory of the 24 bit space (MEMF_24BITDMA) except the RAM board of Emu68 (z2ram), the range from 0xA00000 to 0xFFFFFF (PCMCIA, CIAs, chipset, clock, ROM), the table of the vectors of the 68k (VBR), an expansion board that is not the RAM of Emu68. A transfer there would freeze the machine.
 	BDERR_OVERLAP       the source and the destination overlap (without BDJ_Move, or a row of more than 256 KB with it)
 	BDERR_TOOBIG        too many rows, or a row of a gigabyte
 

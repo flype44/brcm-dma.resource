@@ -28,6 +28,8 @@
 
 /* The channels the resource keeps: the 40 bit ones that the ARM may use (device tree mask 0x3000: 12 and 13) */
 #define BDMA_MAX_CHANNELS 2
+#define BDMA_MAX_RAMBOARDS 16       /* RAM boards of Emu68 remembered; a further one is not accepted (its memory is refused: the safe side) */
+#define BDMA_MAX_BOARDS   32        /* expansion boards that BDMA_InMemory() remembers: more, and no job is accepted outside the RTG memory */
 #define BDMA_SIZE_BUCKETS 5      /* the histogram of the jobs: up to 64 bytes, 4 KB, 32 KB, 1 MB, more */
 
 /* Up to three control blocks of 32 bytes a row: a head and a tail of 32 bit accesses around a body of 128 bit accesses */
@@ -209,6 +211,14 @@ struct BDMABase
     ULONG                   bdb_Handle;          /* the GPU memory of the control blocks */
     ULONG                   bdb_VCBase;          /* /emu68 vc4-mem: the RTG memory, which exec does not know */
     ULONG                   bdb_VCSize;
+    ULONG                   bdb_VBR;             /* the table of the vectors of the 68k, which the DMA must not touch (learnt when the engine starts) */
+    ULONG                   bdb_MemKnown;        /* the boards and the VBR were learnt (LearnMemory); until then only the RTG memory is accepted */
+    ULONG                   bdb_Boards;          /* expansion boards that are not the RAM of Emu68: BDMA_MAX_BOARDS + 1 if the list was longer */
+    ULONG                   bdb_BoardLo[BDMA_MAX_BOARDS];
+    ULONG                   bdb_BoardHi[BDMA_MAX_BOARDS];
+    ULONG                   bdb_RamBoards;       /* the RAM boards of Emu68 (z2ram): the only memory of the 24 bit space that the DMA may use */
+    ULONG                   bdb_RamLo[BDMA_MAX_RAMBOARDS];
+    ULONG                   bdb_RamHi[BDMA_MAX_RAMBOARDS];
     struct BDMAChannel      bdb_Channel[BDMA_MAX_CHANNELS];
     ULONG                   bdb_Channels;        /* how many are in use */
 

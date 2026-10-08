@@ -23,7 +23,10 @@
 #include <exec/memory.h>
 #include <exec/interrupts.h>
 #include <hardware/intbits.h>
+#include <libraries/configvars.h>
+#include <libraries/expansionbase.h>
 #include <proto/exec.h>
+#include <proto/expansion.h>
 
 #include <common/compiler.h>
 
@@ -32,15 +35,160 @@
 #include "mbox.h"
 #include "cache.h"
 
-/* Is (address, address + bytes) memory that a transfer may touch:
-   known to exec, or the RTG memory (/emu68 vc4-mem)?
+/* What the DMA of the Pi reaches is the RAM of the Pi. The bus of the Amiga is not: for the DMA, its addresses are the memory of Emu68
+   and of the firmware, and a transfer there freezes the machine. The Amiga bus is, in the address space of the 68k: the Chip RAM and
+   the vectors at 0 (below 2 MB), the end of the 24 bit space from 10 MB (0xA00000: PCMCIA, CIAs, slow RAM, the chipset, the clock,
+   autoconfig, the ROM), the table of the vectors where the VBR puts it, and the boards of the real Zorro bus. Emu68 declares its own
+   boards (manufacturer 0x6D73); only its RAM board (product 0x10) is RAM, the others (ROM, device tree, SDHC...) are not.
+   The RAM that Emu68 gives is in the lists of exec; the boards and the VBR are learnt when the engine starts (LearnMemory). */
+#define ADDR_CHIP_END       0x00200000UL
+#define ADDR_NATIVE_LO      0x00A00000UL
+#define ADDR_NATIVE_HI      0x00FFFFFFUL
+#define VECTORS_BYTES       0x00000400UL        /* 256 vectors */
+#define EMU68_MANUFACTURER  0x6D73
+#define EMU68_PRODUCT_RAM   0x10
+
+/* Run by Supervisor(): MOVEC is not for the user mode (it reboots the machine under Emu68) */
+extern ULONG BDMA_ReadVBR(void);
+
+__asm__(
+    "       .text\n"
+    "       .even\n"
+    "       .globl  _BDMA_ReadVBR\n"
+    "_BDMA_ReadVBR:\n"
+    "       movec   vbr,d0\n"
+    "       rte\n"
+);
+
+/* The VBR and the expansion boards, in a task context under bdb_Lock (the engine starts there). If expansion.library is not there yet (a
+   client very early in the boot) nothing is known about the bus: BDMA_InMemory() accepts nothing but the RTG memory, and the next call
+   to BDMA_StartEngine() tries again. */
+static void LearnMemory(
+    struct BDMABase *BDMABase)
+{
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    struct ExpansionBase *ExpansionBase;
+    struct ConfigDev *cd = NULL;
+    ULONG n = 0;
+
+    BDMABase->bdb_VBR = Supervisor((ULONG (*)())BDMA_ReadVBR);
+
+    ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library", 0);
+    if (ExpansionBase == NULL)
+    {
+        return;
+    }
+
+    BDMABase->bdb_RamBoards = 0;
+
+    while ((cd = FindConfigDev(cd, -1, -1)) != NULL && n <= BDMA_MAX_BOARDS)
+    {
+        ULONG lo = (ULONG)cd->cd_BoardAddr;
+
+        if (cd->cd_BoardSize == 0)
+        {
+            continue;
+        }
+
+        /* the RAM of Emu68 is RAM of the Pi, at the same addresses for the DMA (checked by step 16 of brcm-dma-test) */
+        if (cd->cd_Rom.er_Manufacturer == EMU68_MANUFACTURER && cd->cd_Rom.er_Product == EMU68_PRODUCT_RAM)
+        {
+            if (BDMABase->bdb_RamBoards < BDMA_MAX_RAMBOARDS)
+            {
+                BDMABase->bdb_RamLo[BDMABase->bdb_RamBoards] = lo;
+                BDMABase->bdb_RamHi[BDMABase->bdb_RamBoards] = lo + cd->cd_BoardSize - 1;
+                BDMABase->bdb_RamBoards++;
+            }
+            continue;
+        }
+
+        if (n == BDMA_MAX_BOARDS)
+        {
+            n++;
+            break;
+        }
+
+        BDMABase->bdb_BoardLo[n] = lo;
+        BDMABase->bdb_BoardHi[n] = lo + cd->cd_BoardSize - 1;
+        n++;
+    }
+
+    BDMABase->bdb_Boards = n;
+    BDMABase->bdb_MemKnown = 1;
+    CloseLibrary((struct Library *)ExpansionBase);
+}
+
+/* Is the block [first, last] in RAM that the DMA reaches: fast memory known to exec, the 24 bit space only in a RAM board of Emu68, and clear of
+   the Amiga bus (see above) */
+static BOOL BDMA_PiOwns(
+    struct BDMABase *BDMABase,
+    ULONG first,
+    ULONG last)
+{
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    ULONG type_first, type_last, i;
+
+    if (first < ADDR_CHIP_END)
+    {
+        return FALSE;
+    }
+
+    if (first <= ADDR_NATIVE_HI && last >= ADDR_NATIVE_LO)
+    {
+        return FALSE;
+    }
+
+    if (first < BDMABase->bdb_VBR + VECTORS_BYTES && last >= BDMABase->bdb_VBR)
+    {
+        return FALSE;
+    }
+
+    if (!BDMABase->bdb_MemKnown || BDMABase->bdb_Boards > BDMA_MAX_BOARDS)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < BDMABase->bdb_Boards; i++)
+    {
+        if (first <= BDMABase->bdb_BoardHi[i] && last >= BDMABase->bdb_BoardLo[i])
+        {
+            return FALSE;
+        }
+    }
+
+    type_first = TypeOfMem((APTR)first);
+    type_last = TypeOfMem((APTR)last);
+
+    /* a positive rule as well: fast memory, at both ends, not Chip RAM, and what is of the 24 bit space (MEMF_24BITDMA) only inside a RAM board
+       of Emu68. What is not known is refused. */
+    if (!(type_first & MEMF_FAST) || !(type_last & MEMF_FAST) || ((type_first | type_last) & MEMF_CHIP))
+    {
+        return FALSE;
+    }
+
+    if ((type_first | type_last) & MEMF_24BITDMA)
+    {
+        for (i = 0; i < BDMABase->bdb_RamBoards; i++)
+        {
+            if (first >= BDMABase->bdb_RamLo[i] && last <= BDMABase->bdb_RamHi[i])
+            {
+                return TRUE;
+            }
+        }
+
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/* Is (address, address + bytes) memory that a transfer may touch: the RTG memory (/emu68 vc4-mem), or known to exec as memory of the Pi?
 */
 BOOL BDMA_InMemory(
     struct BDMABase *BDMABase, 
     ULONG address, 
     ULONG bytes)
 {
-    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     ULONG last = address + bytes - 1;
 
     if (bytes == 0 || last < address)
@@ -53,7 +201,7 @@ BOOL BDMA_InMemory(
         return TRUE;
     }
 
-    return TypeOfMem((APTR)address) != 0 && TypeOfMem((APTR)last) != 0;
+    return BDMA_PiOwns(BDMABase, address, last);
 }
 
 /* Is (lo, hi) all in the memory of the RTG board?
@@ -691,10 +839,17 @@ BOOL BDMA_StartEngine(
 
     if (BDMABase->bdb_State != BES_NOTSTARTED)
     {
+        if (BDMABase->bdb_State == BES_RUNNING && !BDMABase->bdb_MemKnown)
+        {
+            LearnMemory(BDMABase);
+        }
+
         return BDMABase->bdb_State == BES_RUNNING;
     }
 
     BDMABase->bdb_State = BES_FAILED;
+
+    LearnMemory(BDMABase);
 
     /* NewList(): before the first interrupt of a channel can look at it */
     BDMABase->bdb_Queue.mlh_Head = (struct MinNode *)&BDMABase->bdb_Queue.mlh_Tail;
