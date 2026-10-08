@@ -55,6 +55,7 @@ add_executable(brcm-dma.resource
     src/bdma_waitjob.c
     src/bdma_checkjob.c
     src/bdma_abortjob.c
+    src/bdma_resetstatistics.c
 )
 
 bin_to_header(brcm-dma.resource)

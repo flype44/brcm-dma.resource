@@ -220,7 +220,7 @@ struct BDMABase
     struct Interrupt        bdb_TickInt;         /* the watchdog: a vertical blank server, BDJ_Timeout */
 };
 
-#define NUMBER_OF_FUNCTIONS 12
+#define NUMBER_OF_FUNCTIONS 13
 /* the table of jumps, rounded up to a multiple of 4: exec wants the library base on a longword boundary (V36 and later) */
 #define BASE_NEG_SIZE ((NUMBER_OF_FUNCTIONS * 6 + 3) & ~3)
 #define BASE_POS_SIZE ((sizeof(struct BDMABase)))
@@ -284,6 +284,7 @@ VOID kprintf(REGARG(const char * msg, "a0"), REGARG(VOID * args, "a1"));
 #define bug(string, ...) \
     do { ULONG args[] = {0, __VA_ARGS__}; kprintf(string, &args[1]); } while(0)
 
+VOID L_BDMA_ResetStatistics(REGARG(struct BDMABase *BDMABase, "a6"));
 ULONG L_BDMA_QueryInfoTagList(REGARG(const struct TagItem *tagList, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
 struct BDMAClient * L_BDMA_OpenClientTagList(REGARG(const struct TagItem *tagList, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
 VOID L_BDMA_CloseClient(REGARG(struct BDMAClient *client, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));

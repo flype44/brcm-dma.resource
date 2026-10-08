@@ -5,6 +5,7 @@
       brcm-dma-info WATCH 5         the report, then every 5 seconds the activity of the interval: jobs and MB a second, load of each channel
       brcm-dma-info WATCH 5 COUNT 12    ... stops after 12 intervals (Ctrl-C stops it at any time)
       brcm-dma-info WATCH 5 LOG     ... a new pair of lines per interval, no escape codes (to redirect to a file)
+      brcm-dma-info RESET           the report, then the counters back to zero (they are shared by every client)
 
     By default the two lines of an interval are drawn over the previous ones (console escape sequences: two lines up, erase), so the output stays short.
 
@@ -218,9 +219,9 @@ int main(int argc, struct WBStartup *wbmsg)
 {
     struct Snap before, after;
     struct RDArgs *rda;
-    LONG args[3] = { 0, 0, 0 };
+    LONG args[4] = { 0, 0, 0, 0 };
     ULONG watch = 0, count = 0, shown = 0, t0, t1, i;
-    BOOL log;
+    BOOL log, reset;
     int rc = 0;
 
     (void)argc;
@@ -231,10 +232,10 @@ int main(int argc, struct WBStartup *wbmsg)
     if (DOSBase == NULL)
         return 20;
 
-    rda = ReadArgs("WATCH/K/N,COUNT/K/N,LOG/S", args, NULL);
+    rda = ReadArgs("WATCH/K/N,COUNT/K/N,LOG/S,RESET/S", args, NULL);
     if (rda == NULL)
     {
-        Printf("usage: brcm-dma-info [WATCH seconds [COUNT intervals] [LOG]]\n");
+        Printf("usage: brcm-dma-info [WATCH seconds [COUNT intervals] [LOG]] [RESET]\n");
         CloseLibrary((struct Library *)DOSBase);
         return 10;
     }
@@ -242,6 +243,7 @@ int main(int argc, struct WBStartup *wbmsg)
     if (args[0]) watch = *(ULONG *)args[0];
     if (args[1]) count = *(ULONG *)args[1];
     log = args[2] != 0;
+    reset = args[3] != 0;
     FreeArgs(rda);
 
     BrcmDmaBase = OpenResource(BRCMDMANAME);
@@ -254,6 +256,13 @@ int main(int argc, struct WBStartup *wbmsg)
 
     Query(&before);
     Report(&before);
+
+    if (reset)
+    {
+        BDMA_ResetStatistics();
+        Printf("counters set back to zero\n");
+        Query(&before);
+    }
 
     if (watch != 0 && before.available)
     {

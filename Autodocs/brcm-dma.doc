@@ -14,6 +14,7 @@ brcm-dma.resource/BDMA_QueryInfoTagList
 brcm-dma.resource/BDMA_QueryInfoTags
 brcm-dma.resource/BDMA_QueryJobTagList
 brcm-dma.resource/BDMA_QueryJobTags
+brcm-dma.resource/BDMA_ResetStatistics
 brcm-dma.resource/BDMA_SetJobTagList
 brcm-dma.resource/BDMA_SetJobTags
 brcm-dma.resource/BDMA_StartJob
@@ -416,6 +417,30 @@ brcm-dma.resource/BDMA_QueryJobTags             brcm-dma.resource/BDMA_QueryJobT
 
    FUNCTION
 	The same as BDMA_QueryJobTagList(); generated inline from the SFD, not a function of the resource.
+
+brcm-dma.resource/BDMA_ResetStatistics          brcm-dma.resource/BDMA_ResetStatistics
+
+   NAME
+	BDMA_ResetStatistics -- set the statistics back to zero (V0.1)
+
+   SYNOPSIS
+	BDMA_ResetStatistics()
+
+	VOID BDMA_ResetStatistics(VOID);
+
+   FUNCTION
+	Sets to zero what BDMA_QueryInfoTagList() reports as measures: BDI_Jobs, BDI_MegaBytes, BDI_Failures, BDI_Aborts, BDI_Timeouts, BDI_Busy,
+	BDI_Slices, BDI_Deferred, BDI_WaitMaxUs, BDI_BusyMs0, BDI_BusyMs1 and the sizes BDI_Size64 to BDI_SizeBig. BDI_QueueMax starts again at the
+	number of jobs waiting at that moment. The jobs in the queue and on the channels are not touched.
+
+	The counters are shared by every client, and there is no check: whoever calls this resets them for all. It is meant for measuring (read, do
+	something, read again), not for a program that wants its own counters: it subtracts two reads instead.
+
+   NOTES
+	Can be called from a task or an interrupt; it only briefly disables the interrupts.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_QueryInfoTagList()
 
 brcm-dma.resource/BDMA_SetJobTagList           brcm-dma.resource/BDMA_SetJobTagList
 

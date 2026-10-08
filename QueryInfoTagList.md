@@ -28,6 +28,7 @@ brcm-dma-info                       one report
 brcm-dma-info WATCH 5               the report, then a line every 5 seconds
 brcm-dma-info WATCH 5 COUNT 12      the same, 12 intervals, then it stops
 brcm-dma-info WATCH 5 LOG           a new pair of lines per interval, no escape codes
+brcm-dma-info RESET                 the report, then the counters back to zero
 ```
 
 In a watch the two lines of an interval are drawn over the previous ones (console sequences: two lines up, erase to the end of the display), so the output stays short and shows the latest interval; `LOG` keeps every interval as a new pair of lines, without escape codes, for a redirection to a file or a capture through a remote tool.
@@ -77,7 +78,8 @@ A useful use is to start `brcm-dma-info WATCH 2` in a shell and work on the desk
 
 ## The statistics
 
-All counters count from the start of the OS and are never reset: read twice and subtract to measure an interval.
+All counters count from the start of the OS, or from the last `BDMA_ResetStatistics()` (`brcm-dma-info RESET` calls it after printing the report): read twice and subtract to measure an interval, or reset first.
+They are shared by every client: whoever resets them resets them for all, there is no check.
 They are plain counters or maxima updated where the event happens (interrupt, or interrupts off), so reading them costs nothing and disturbs nothing.
 
 | Tag | Meaning | What it tells |
@@ -111,6 +113,7 @@ Definitions that matter when reading them:
 
 ## Notes
 
+- `BDMA_ResetStatistics()` sets to zero every measure (not the state of the queue and of the channels); `BDI_QueueMax` starts again at what is waiting at that moment.
 - The counters are 32 bits: `BDI_Jobs` wraps after about 4 billion jobs, `BDI_BusyMs0/1` after about 49 days of busy time.
 - When the engine is not available, `BDI_Available` is FALSE and the statistics are zero; the reason is kept in the base for the test tools.
 - Statistics are part of the information interface: a new one is a new `BDI_*` tag and an entry in `Autodocs/brcm-dma.doc`.

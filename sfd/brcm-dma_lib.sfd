@@ -33,4 +33,5 @@ LONG BDMA_SetJobTagList(struct BDMAJob *job, CONST struct TagItem *tagList) (A0,
 LONG BDMA_SetJobTags(struct BDMAJob *job, ULONG tag1Type, ...) (A0,A1)
 VOID BDMA_StartJob(struct BDMAJob *job) (A0)
 LONG BDMA_WaitJob(struct BDMAJob *job) (A0)
+VOID BDMA_ResetStatistics() ()
 ==end
