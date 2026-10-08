@@ -201,9 +201,17 @@ static ULONG NowMs(void)
     return (ds.ds_Minute * 60UL * 50UL + ds.ds_Tick) * 20UL;
 }
 
+/* Ctrl-C is remembered: reading the signal clears it, and the answer must not depend on how many times it is asked */
 static BOOL Interrupted(void)
 {
-    return (SetSignal(0, SIGBREAKF_CTRL_C) & SIGBREAKF_CTRL_C) != 0;
+    static BOOL stop = FALSE;
+
+    if (!stop && (SetSignal(0, SIGBREAKF_CTRL_C) & SIGBREAKF_CTRL_C))
+    {
+        stop = TRUE;
+    }
+
+    return stop;
 }
 
 int main(int argc, struct WBStartup *wbmsg)
@@ -253,9 +261,10 @@ int main(int argc, struct WBStartup *wbmsg)
 
         while (!Interrupted() && (count == 0 || shown < count))
         {
-            for (i = 0; i < watch && !Interrupted(); i++)
+            /* waits in steps of a tenth of a second, so that Ctrl-C answers at once */
+            for (i = 0; i < watch * 10 && !Interrupted(); i++)
             {
-                Delay(50);
+                Delay(5);
             }
 
             if (Interrupted())
