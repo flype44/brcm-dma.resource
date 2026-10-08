@@ -25,6 +25,10 @@
 #define MB_GET_DMA_CHANNELS (0x00060001)
 #endif
 
+#ifndef MB_GET_BOARD_REVISION
+#define MB_GET_BOARD_REVISION (0x00010002)
+#endif
+
 #ifndef MB_ALLOCATE_MEMORY
 #define MB_ALLOCATE_MEMORY (0x0003000c)
 #endif
@@ -52,6 +56,9 @@
 #ifndef MEM_FLAG_HINT_PERMALOCK
 #define MEM_FLAG_HINT_PERMALOCK (1 << 6)
 #endif
+
+/* The revision code of the board (0 when the firmware does not answer): the bits 12 to 15 of a new style code (bit 23 set) name the SoC */
+ULONG GetBoardRevision(struct Library *MailboxBase);
 
 ULONG GetDMAChannels(struct Library *MailboxBase);
 

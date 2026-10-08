@@ -129,7 +129,7 @@ void BDMA_AbortInternal(
     {
         struct BDMAChannel *channel = &BDMABase->bdb_Channel[job->bj_Channel];
 
-        BDMA_StopChannel(channel);
+        BDMABase->bdb_Backend->Stop(channel);
         channel->bc_Job = NULL;
         aborted = TRUE;
     }

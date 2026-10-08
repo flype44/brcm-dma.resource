@@ -61,6 +61,7 @@
 #define BDW_ALLOC        6        /* no GPU memory for the control blocks */
 #define BDW_LOCK         7        /* the GPU memory could not be locked, or is not 32 byte aligned */
 #define BDW_CHANNELS     8        /* no channel proved itself, see bc_Why */
+#define BDW_NOTIMPLEMENTED 9      /* the model is recognised (BCM2835 family) and has no backend yet */
 
 #define BCW_OK           0
 #define BCW_ADDINT       1        /* gic400.library refused the interrupt, bc_Error is its answer */
@@ -157,6 +158,8 @@ struct BDMAChannel
     ULONG               bc_TestCopied;
 };
 
+struct BDMABackend;
+
 struct BDMABase
 {
     struct Library          bdb_Node;
@@ -167,6 +170,7 @@ struct BDMABase
     /* the engine: set up at the first call that needs it (BDMA_StartEngine), under bdb_Lock */
     ULONG                   bdb_State;           /* BES_* */
     ULONG                   bdb_Model;           /* BDM_* */
+    const struct BDMABackend *bdb_Backend;       /* the code of the SoC family, chosen when the engine starts */
     ULONG                   bdb_Features;
     ULONG                   bdb_ChannelMask;     /* the device tree mask */
     ULONG                   bdb_Firmware;        /* the mask of the firmware (GET_DMA_CHANNELS) */
@@ -223,7 +227,26 @@ ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"));
 /* The engine (engine.c) */
 BOOL BDMA_StartEngine(struct BDMABase *BDMABase);
 VOID BDMA_Run(struct BDMABase *BDMABase);
-VOID BDMA_StopChannel(struct BDMAChannel *channel);
+VOID BDMA_StartOnChannel(struct BDMABase *BDMABase, struct BDMAChannel *channel, struct BDMAJob *job);
+VOID BDMA_ChannelEnded(struct BDMABase *BDMABase, struct BDMAChannel *channel, LONG error);
+
+/* A backend is the code of one SoC family (vc6.c: BCM2711, vc4.c: BCM2835 family, not written). The common engine (engine.c)
+   chooses one from the board revision when it starts and calls it through this table.
+   Start:  everything the hardware needs (channels, interrupts, memory, self test); FALSE with bdb_Reason when it cannot
+   Build:  the chain of the next slice of the job, in the buffer of its channel
+   Arm:    starts the channel on that chain
+   Stop:   stops a channel and cleans it (abort, watchdog, sweep)
+   The backend calls back BDMA_ChannelEnded() at the end of a slice. */
+struct BDMABackend
+{
+    BOOL (*Start)(struct BDMABase *BDMABase);
+    VOID (*Build)(struct BDMABase *BDMABase, struct BDMAChannel *channel, struct BDMAJob *job);
+    VOID (*Arm)(struct BDMAChannel *channel);
+    VOID (*Stop)(struct BDMAChannel *channel);
+};
+
+extern const struct BDMABackend BDMA_VC6Backend;
+extern const struct BDMABackend BDMA_VC4Backend;
 BOOL BDMA_InMemory(struct BDMABase *BDMABase, ULONG address, ULONG bytes);
 BOOL BDMA_InVideoMemory(struct BDMABase *BDMABase, ULONG lo, ULONG hi);
 

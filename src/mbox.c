@@ -43,6 +43,18 @@ static BOOL RawCommandOneValue(struct Library *MailboxBase, ULONG tag, ULONG *va
     return TRUE;
 }
 
+ULONG GetBoardRevision(struct Library *MailboxBase)
+{
+    ULONG revision = 0;
+
+    if (!RawCommandOneValue(MailboxBase, MB_GET_BOARD_REVISION, &revision))
+    {
+        return 0;
+    }
+
+    return revision;
+}
+
 ULONG GetDMAChannels(struct Library *MailboxBase)
 {
     ULONG mask = 0;

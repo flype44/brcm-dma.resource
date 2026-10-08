@@ -33,6 +33,8 @@ add_executable(brcm-dma.resource
     src/tags.c
     src/utility.c
     src/engine.c
+    src/vc6.c
+    src/vc4.c
     src/mbox.c
     src/bdma_queryinfotaglist.c
     src/job.c

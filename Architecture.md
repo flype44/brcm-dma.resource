@@ -29,12 +29,12 @@ Job API (TagLists, 12 functions)                [done]
 Common engine: jobs, queue, scheduler, conflict detection,
                channel arbitration, slicing, watchdog, completion    [done, inside engine.c]
    |
-Platform backend (one per SoC family, chosen from the device tree)
+Platform backend (one per SoC family, chosen from the board revision given by the firmware)
    +-- DMA backend:  registers, control blocks, widths, bursts, channel classes, reset
    +-- IRQ backend:  delivery of "completed / failed" to the engine
    |
    +-- BCM2711 (Pi 4B, CM4, Pi 400): 40 bit channels 12, 13; IRQ through gic400.library    [done]
-   +-- BCM2835 family (Zero, 2, 3): normal/lite channels; legacy interrupt controller      [planned]
+   +-- BCM2835 family (Zero, 2, 3): normal/lite channels; legacy interrupt controller      [stub: vc4.c answers BDW_NOTIMPLEMENTED]
 ```
 
 Rules: the common engine knows jobs, never registers. The DMA backend knows the DMA hardware. The IRQ backend knows how an interrupt is delivered: gic400.library is a detail of the BCM2711 IRQ
