@@ -43,9 +43,11 @@ RTG memory: 3C800000, 24576 KB
 jobs 27397 (3605 MB), failed 0, aborted 2, timeouts 0, busy 3, slices 40, deferred 5
 queue max 4, longest wait 312 us; busy: channel 12 41200 ms, channel 13 3900 ms
 sizes: <=64B 120 <=4K 9000 <=32K 17000 <=1M 1200 >1M 77
+interrupts: 16099, 596 Mcycles, 24625 kinstructions (37888 cycles, 1566 instructions each)
 ```
 
-(The figures above only show the layout.) The two busy times are those of the first two channels managed, in ascending order of channel number.
+(The figures above only show the layout.) The two busy times are those of the first two channels managed, in ascending order of channel number. The last line is what the interrupts of the channels
+cost the CPU (the counters of Emu68, `BDI_IrqCalls`, `BDI_IrqMCycles`, `BDI_IrqKInstr`) with the mean of one interrupt.
 
 **The watch lines** give the activity of each interval, not the totals:
 
@@ -111,6 +113,7 @@ Definitions that matter when reading them:
 - Latency problems: `BDI_WaitMaxUs` high with `BDI_QueueMax` small means a long job blocks a channel (check `BDI_Slices`); a large `BDI_QueueMax` means the two channels are saturated.
 - Ordering cost: `BDI_Deferred` close to `BDI_Jobs` means clients submit overlapping jobs that serialise.
 - Health: `BDI_Failures`, `BDI_Timeouts` should be 0 in normal use.
+- What the service costs the CPU: `BDI_IrqMCycles * 2^20 / BDI_IrqCalls` cycles for one interrupt (about 38000, 21 us at 1.8 GHz, for a small job; about 55000 to 65000 for a slice of a big job, which builds the next chain in the interrupt).
 - Unbalanced `BDI_BusyMs0` / `BDI_BusyMs1` means one channel does most of the work (the first idle channel is always taken first, so a small imbalance is normal).
 
 ## Notes
