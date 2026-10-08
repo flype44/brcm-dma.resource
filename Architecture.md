@@ -120,6 +120,7 @@ interrupt must arrive) before a channel is used. Details and limits: `Capabiliti
 | Raw chain layer (L0) | `BDMA_AllocChain` or equivalent, at the end of the table |
 | BCM2835 family backend | needs a Pi 3 to measure; legacy interrupt controller |
 | Switches by dtoverlay (`/chosen/bootargs`) | channels left out, disable, verbosity |
+| Size of the slices (idea, not needed yet) | A slice is 1 MB (0.6 to 1 ms); a job that arrives waits at most one slice, and an interrupt costs about 36 us a slice (3.6%). Shorter slices lower the latency of the others and raise the cost of the big job, so it is the owner of the big job that pays for what the others gain. Three ways: a hint of the job (`BDJ_SliceBytes`, for a polite client), a global setting (only for tests: it penalises every big job), or the resource shortens a slice when a job of a higher priority waits (the fairest, the most complex). To reconsider when a client with a hard latency exists (the ring of AHI while the driver scrolls), measured with `BDI_WaitMaxUs`. |
 
 ## 8. Example
 
