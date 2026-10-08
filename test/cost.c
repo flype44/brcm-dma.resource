@@ -10,7 +10,10 @@
       E  the same with BDJ_NoCache                                       D - E = the cache maintenance (before and after)
       F  BDJ_NoCache, BDMA_CheckJob polled until true, then BDMA_WaitJob  spin = the transfer and the interrupt, with no sleep; D - F = sleep and wake
 
-      brcm-dma-cost [N n]
+      brcm-dma-cost [N n] [SIZE bytes]
+
+    SIZE is the length of the jobs of the phases D, E and F and of the jobs started again (G, H); default 64. With 65536 or 1048576 the phase D
+    minus the phase E is the cost, for the CPU, of the cache maintenance around a big job, and the building blocks are also measured at that size.
 */
 
 #include <exec/types.h>
@@ -67,6 +70,15 @@ static void PushLines(UBYTE *a, ULONG len)
         asm volatile("nop; cpushl dc,(%0)" :: "a"(p) : "memory");
 }
 
+/* CPUSHP: a whole page of 4 KB per instruction (Emu68 does the loop of dc civac itself, one dsb at the end) */
+static void PushPages(UBYTE *a, ULONG len)
+{
+    UBYTE *p = (UBYTE *)((ULONG)a & ~4095UL), *end = (UBYTE *)(((ULONG)a + len + 4095) & ~4095UL);
+
+    for (; p < end; p += 4096)
+        asm volatile("nop; cpushp dc,(%0)" :: "a"(p) : "memory");
+}
+
 static void InvLines(UBYTE *a, ULONG len)
 {
     UBYTE *p = (UBYTE *)((ULONG)a & ~63UL), *end = (UBYTE *)(((ULONG)a + len + 63) & ~63UL);
@@ -93,10 +105,10 @@ static void LineTest(UBYTE *buf0, ULONG n)
     ULONG k, i, bad = 0, runs = 0, wrong_guard = 0;
     UBYTE *buf = (UBYTE *)(((ULONG)buf0 + 63) & ~63UL);
 
-    Printf("per line instructions (64 byte lines), nanoseconds for the whole range\n  bytes     cpushl     cinvl  CacheClearE(us)\n");
+    Printf("per line instructions (64 byte lines) and per page (cpushp, 4 KB), nanoseconds for the whole range\n  bytes     cpushl     cinvl    cpushp  CacheClearE(us)\n");
     for (k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++)
     {
-        ULONG len = sizes[k], lines = len / 64, reps = 4096 / lines, t0, a, b, c;
+        ULONG len = sizes[k], lines = len / 64, reps = 4096 / lines, t0, a, b, c, pp;
 
         if (reps < 3)
             reps = 3;
@@ -104,8 +116,9 @@ static void LineTest(UBYTE *buf0, ULONG n)
             reps = 200;
         t0 = timer_now(); for (i = 0; i < reps; i++) PushLines(buf, len); a = (timer_now() - t0) * 1000 / reps;
         t0 = timer_now(); for (i = 0; i < reps; i++) InvLines(buf, len); b = (timer_now() - t0) * 1000 / reps;
+        t0 = timer_now(); for (i = 0; i < reps; i++) PushPages(buf, len); pp = (timer_now() - t0) * 1000 / reps;
         t0 = timer_now(); for (i = 0; i < reps; i++) CacheClearE(buf, len, CACRF_ClearD); c = (timer_now() - t0) / reps;
-        Printf("  %6ld %9ld %9ld %9ld\n",(LONG)len, (LONG)a, (LONG)b, (LONG)c);
+        Printf("  %6ld %9ld %9ld %9ld %9ld\n", (LONG)len, (LONG)a, (LONG)b, (LONG)pp, (LONG)c);
     }
 
     /* correctness: sources written by the CPU (dirty in the cache), destinations too, jobs with BDJ_NoCache, only the instructions above */
@@ -149,9 +162,9 @@ static void LineTest(UBYTE *buf0, ULONG n)
 int main(int argc, struct WBStartup *wbmsg)
 {
     struct RDArgs *rda;
-    LONG args[1] = { 0 };
-    ULONG n = 300, i, t0, t1, t2, t3, available = 0;
-    UBYTE *buf, *buf2;
+    LONG args[2] = { 0, 0 };
+    ULONG n = 300, size = 64, i, t0, t1, t2, t3, available = 0;
+    UBYTE *buf, *buf2, *s, *d;
     struct Acc A, B, C, Dadd, Dwait, Dtot, Eadd, Ewait, Etot, Fadd, Fspin, Fwait, Ftot;
     ULONG jobs;
 
@@ -163,11 +176,13 @@ int main(int argc, struct WBStartup *wbmsg)
     if (DOSBase == NULL)
         return 20;
 
-    rda = ReadArgs("N/K/N", args, NULL);
+    rda = ReadArgs("N/K/N,SIZE/K/N", args, NULL);
     if (rda != NULL)
     {
         if (args[0])
             n = *(ULONG *)args[0];
+        if (args[1] && *(ULONG *)args[1] != 0)
+            size = *(ULONG *)args[1];
         FreeArgs(rda);
     }
 
@@ -196,13 +211,33 @@ int main(int argc, struct WBStartup *wbmsg)
     if (buf == NULL)
         return 20;
 
+    /* the source and the destination of the jobs: the two halves of buf for the small jobs, blocks of their own for the big ones */
+    if (size > 4096)
+    {
+        s = AllocMem(size, MEMF_PUBLIC | MEMF_FAST);
+        d = AllocMem(size, MEMF_PUBLIC | MEMF_FAST);
+        if (s == NULL || d == NULL)
+        {
+            Printf("no memory for SIZE %ld\n", (LONG)size);
+            return 20;
+        }
+        for (i = 0; i < size; i += 4096)
+            s[i] = (UBYTE)(i >> 12);
+    }
+    else
+    {
+        s = buf;
+        d = buf + 4096;
+    }
+    Printf("jobs of %ld bytes\n", (LONG)size);
+
     AccInit(&A); AccInit(&B); AccInit(&C);
     AccInit(&Dadd); AccInit(&Dwait); AccInit(&Dtot);
     AccInit(&Eadd); AccInit(&Ewait); AccInit(&Etot);
     AccInit(&Fadd); AccInit(&Fspin); AccInit(&Fwait); AccInit(&Ftot);
 
     /* a first job, so that nothing is measured while the first caller pays for the start of the engine */
-    BDMA_WaitJob(BDMA_AddJobTags(Client, BDJ_Src, (ULONG)buf, BDJ_Dst, (ULONG)buf + 4096, BDJ_Length, 64, TAG_DONE));
+    BDMA_WaitJob(BDMA_AddJobTags(Client, BDJ_Src, (ULONG)s, BDJ_Dst, (ULONG)d, BDJ_Length, size, TAG_DONE));
 
     for (i = 0; i < n; i++)
     {
@@ -223,7 +258,7 @@ int main(int argc, struct WBStartup *wbmsg)
 
         /* D: cache maintenance, sleeping wait */
         t0 = timer_now();
-        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)buf, BDJ_Dst, (ULONG)buf + 4096, BDJ_Length, 64, TAG_DONE);
+        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)s, BDJ_Dst, (ULONG)d, BDJ_Length, size, TAG_DONE);
         t1 = timer_now();
         if (job)
             BDMA_WaitJob(job);
@@ -234,7 +269,7 @@ int main(int argc, struct WBStartup *wbmsg)
 
         /* E: no cache maintenance */
         t0 = timer_now();
-        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)buf, BDJ_Dst, (ULONG)buf + 4096, BDJ_Length, 64, BDJ_NoCache, TRUE, TAG_DONE);
+        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)s, BDJ_Dst, (ULONG)d, BDJ_Length, size, BDJ_NoCache, TRUE, TAG_DONE);
         t1 = timer_now();
         if (job)
             BDMA_WaitJob(job);
@@ -245,7 +280,7 @@ int main(int argc, struct WBStartup *wbmsg)
 
         /* F: no cache maintenance, polled to the end, then the wait that returns at once */
         t0 = timer_now();
-        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)buf, BDJ_Dst, (ULONG)buf + 4096, BDJ_Length, 64, BDJ_NoCache, TRUE, TAG_DONE);
+        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)s, BDJ_Dst, (ULONG)d, BDJ_Length, size, BDJ_NoCache, TRUE, TAG_DONE);
         t1 = timer_now();
         if (job)
         {
@@ -264,7 +299,7 @@ int main(int argc, struct WBStartup *wbmsg)
     /* a job described once and started again: what the new model is for. G: BDMA_StartJob and BDMA_WaitJob only; H: with BDMA_SetJobTags before */
     {
         struct Acc Gs, Gw, Gt, Hs, Ht;
-        struct BDMAJob *rj = BDMA_AllocJobTags(Client, BDJ_Src, (ULONG)buf, BDJ_Dst, (ULONG)buf + 4096, BDJ_Length, 64, BDJ_NoCache, TRUE, TAG_DONE);
+        struct BDMAJob *rj = BDMA_AllocJobTags(Client, BDJ_Src, (ULONG)s, BDJ_Dst, (ULONG)d, BDJ_Length, size, BDJ_NoCache, TRUE, TAG_DONE);
 
         AccInit(&Gs); AccInit(&Gw); AccInit(&Gt); AccInit(&Hs); AccInit(&Ht);
         if (rj != NULL)
@@ -281,7 +316,7 @@ int main(int argc, struct WBStartup *wbmsg)
                 AccAdd(&Gt, t2 - t0);
 
                 t0 = timer_now();
-                BDMA_SetJobTags(rj, BDJ_Src, (ULONG)buf + 4 * (i & 7), TAG_DONE);
+                BDMA_SetJobTags(rj, BDJ_Src, (ULONG)s + 4 * (i & 7), TAG_DONE);
                 t1 = timer_now();
                 BDMA_StartJob(rj);
                 BDMA_WaitJob(rj);
@@ -301,11 +336,11 @@ int main(int argc, struct WBStartup *wbmsg)
 
     /* the building blocks, one call at a time */
     {
-        struct Acc G1, G2, H0, H1, I0, J, K, L, M;
+        struct Acc G1, G2, H0, H1, I0, J, K, L, M, Z0, Z1, Z2, Z3;
         ULONG l;
         BYTE bit = AllocSignal(-1);
 
-        AccInit(&G1); AccInit(&G2); AccInit(&H0); AccInit(&H1); AccInit(&I0); AccInit(&J); AccInit(&K); AccInit(&L); AccInit(&M);
+        AccInit(&G1); AccInit(&G2); AccInit(&H0); AccInit(&H1); AccInit(&I0); AccInit(&J); AccInit(&K); AccInit(&L); AccInit(&M); AccInit(&Z0); AccInit(&Z1); AccInit(&Z2); AccInit(&Z3);
         for (i = 0; i < n; i++)
         {
             APTR p;
@@ -319,6 +354,11 @@ int main(int argc, struct WBStartup *wbmsg)
             t0 = timer_now(); Disable(); Enable(); AccAdd(&K, timer_now() - t0);
             if (bit >= 0) { t0 = timer_now(); Signal(FindTask(NULL), 1UL << bit); AccAdd(&L, timer_now() - t0); SetSignal(0, 1UL << bit); }
             t0 = timer_now(); p = AllocVec(64, MEMF_PUBLIC | MEMF_CLEAR); FreeVec(p); AccAdd(&M, timer_now() - t0);
+            /* the same calls at the size of the jobs */
+            t0 = timer_now(); CacheClearE(s, size, CACRF_ClearD); AccAdd(&Z0, timer_now() - t0);
+            l = size; t0 = timer_now(); CachePreDMA(s, &l, DMA_ReadFromRAM); AccAdd(&Z1, timer_now() - t0);
+            l = size; t0 = timer_now(); CachePreDMA(d, &l, 0); AccAdd(&Z2, timer_now() - t0);
+            l = size; t0 = timer_now(); CachePostDMA(d, &l, 0); AccAdd(&Z3, timer_now() - t0);
         }
         if (bit >= 0)
             FreeSignal(bit);
@@ -332,6 +372,10 @@ int main(int argc, struct WBStartup *wbmsg)
         Print("Disable + Enable", &K);
         Print("Signal() to self", &L);
         Print("AllocVec + FreeVec 64", &M);
+        Print("CacheClearE SIZE", &Z0);
+        Print("CachePreDMA SIZE, ReadFromRAM", &Z1);
+        Print("CachePreDMA SIZE, write side", &Z2);
+        Print("CachePostDMA SIZE", &Z3);
     }
 
     LineTest(buf2, n);
