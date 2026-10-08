@@ -788,6 +788,28 @@ static void StepWait(void)
     }
     else
         Printf("  (no memory for the timeout: skipped)\n");
+
+    /* the limits of BDJ_Timeout: 0 and what is over 10 s give 10 s, the other values are kept. The job is described, never started. */
+    job = BDMA_AllocJobTags(Client, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, (ULONG)arena + ZONE_B, BDJ_Length, 4096, BDJ_ErrorCode, (ULONG)&e, TAG_DONE);
+    Check("timeout limits: the job is accepted", e, BDERR_OK);
+    if (job != NULL)
+    {
+        static const ULONG asked[] = { 500, 0, 10000000, 10000001, 0xFFFFFFFF };
+        static const ULONG wanted[] = { 500, 10000000, 10000000, 10000000, 10000000 };
+        ULONG i, got;
+
+        BDMA_QueryJobTags(job, BDJI_Timeout, (ULONG)&got, TAG_DONE);
+        Check("timeout limits: the default", got, 1000000);
+
+        for (i = 0; i < 5; i++)
+        {
+            got = 0xdead;
+            BDMA_SetJobTags(job, BDJ_Timeout, asked[i], TAG_DONE);
+            BDMA_QueryJobTags(job, BDJI_Timeout, (ULONG)&got, TAG_DONE);
+            Check("timeout limits: asked value", got, wanted[i]);
+        }
+        BDMA_FreeJob(job);
+    }
     if (big != NULL)
         FreeMem(big, bigsize);
     if (big2 != NULL)

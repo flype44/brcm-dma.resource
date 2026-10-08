@@ -65,6 +65,7 @@ struct BDMAJob;
 #define BDJI_State          (BDMA_Dummy + 64)    /* BDJS_* */
 #define BDJI_Error          (BDMA_Dummy + 65)    /* BDERR_*, once the job is over */
 #define BDJI_BytesDone      (BDMA_Dummy + 66)    /* bytes of the job, once it is over */
+#define BDJI_Timeout        (BDMA_Dummy + 67)    /* microseconds, the BDJ_Timeout that applies to the job (BDJ_Timeout after the limits) */
 
 /* brcm-dma job states */
 #define BDJS_QUEUED        0

@@ -46,6 +46,7 @@ ULONG L_BDMA_QueryJobTagList(
             case BDJI_State:     value = job->bj_State; break;
             case BDJI_Error:     value = job->bj_State < BJS_DONE ? BDERR_OK : (ULONG)job->bj_Error; break;
             case BDJI_BytesDone: value = job->bj_Done; break;
+            case BDJI_Timeout:   value = job->bj_Request.bdr_Timeout; break;
             default: continue;
         }
 

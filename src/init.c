@@ -53,10 +53,10 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
         relFuncTable[6] = (ULONG)&L_BDMA_OpenClientTagList;
         relFuncTable[7] = (ULONG)&L_BDMA_QueryInfoTagList;
         relFuncTable[8] = (ULONG)&L_BDMA_QueryJobTagList;
-        relFuncTable[9] = (ULONG)&L_BDMA_SetJobTagList;
-        relFuncTable[10] = (ULONG)&L_BDMA_StartJob;
-        relFuncTable[11] = (ULONG)&L_BDMA_WaitJob;
-        relFuncTable[12] = (ULONG)&L_BDMA_ResetStatistics;
+        relFuncTable[9] = (ULONG)&L_BDMA_ResetStatistics;
+        relFuncTable[10] = (ULONG)&L_BDMA_SetJobTagList;
+        relFuncTable[11] = (ULONG)&L_BDMA_StartJob;
+        relFuncTable[12] = (ULONG)&L_BDMA_WaitJob;
         relFuncTable[NUMBER_OF_FUNCTIONS] = (ULONG)-1;
 
         BDMABase = (struct BDMABase *)((UBYTE *)base_pointer + BASE_NEG_SIZE);

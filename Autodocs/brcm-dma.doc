@@ -408,6 +408,7 @@ brcm-dma.resource/BDMA_QueryJobTagList       brcm-dma.resource/BDMA_QueryJobTagL
 	tagList         BDJI_State       BDJS_QUEUED, BDJS_RUNNING, BDJS_DONE, BDJS_ABORTED, BDJS_FAILED or BDJS_IDLE (described, not started)
 	                BDJI_Error       BDERR_*, once the job is over
 	                BDJI_BytesDone   the bytes of the job once it is over (0 for a job that failed or was aborted)
+	                BDJI_Timeout     the BDJ_Timeout that applies to the job, in microseconds, after the limits (0 or more than 10000000 gives 10000000)
 
    RESULTS
 	answers         the number of values written

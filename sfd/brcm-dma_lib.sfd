@@ -28,10 +28,10 @@ ULONG BDMA_QueryInfoTags(ULONG tag1Type, ...) (A0)
 ULONG BDMA_QueryJobTagList(struct BDMAJob *job, CONST struct TagItem *tagList) (A0,A1)
 ==varargs
 ULONG BDMA_QueryJobTags(struct BDMAJob *job, ULONG tag1Type, ...) (A0,A1)
+VOID BDMA_ResetStatistics() ()
 LONG BDMA_SetJobTagList(struct BDMAJob *job, CONST struct TagItem *tagList) (A0,A1)
 ==varargs
 LONG BDMA_SetJobTags(struct BDMAJob *job, ULONG tag1Type, ...) (A0,A1)
 VOID BDMA_StartJob(struct BDMAJob *job) (A0)
 LONG BDMA_WaitJob(struct BDMAJob *job) (A0)
-VOID BDMA_ResetStatistics() ()
 ==end
