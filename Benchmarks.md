@@ -179,3 +179,5 @@ to both sides, odd pitches, every alignment of the source) and step 14 (1500 ran
 | 8 bit | 1, 2, 3 pixels (1, 2, 3 bytes) | 18 op/s | 766, 769, 771 op/s | x43 |
 | 16 bit | 1, 2, 3 pixels (2, 4, 6 bytes) | 17 op/s | 620, 627, 627 op/s | x37 |
 | 24 bit | 1, 2, 3 pixels (3, 6, 9 bytes) | 17 op/s | 484, 485, 499 op/s | x29 |
+
+P96Speed 1.2, 640x480, `ScrollRaster() X`, measured by the author after this change: **8 bit 802, 16 bit 626, 24 bit 495, 32 bit 413 operations a second** (before: 19, 19, 19 and 255).
