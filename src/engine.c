@@ -92,20 +92,92 @@ static BOOL Conflict(
            Meets(a->bj_ReadLo, a->bj_ReadHi, b->bj_WriteLo, b->bj_WriteHi);
 }
 
-/* Picks the job that may start now on an idle channel and hands it to that channel:
-   the best priority, then the order of submission, among the jobs that conflict with
-   no running job and with no OLDER job still waiting (a job never overtakes an older
-   one it conflicts with: the result is that of the jobs run one by one).
-   Called with the interrupts off (Disable(), or from the interrupt). The job is marked 
-   running, the channel is taken; the caller then calls StartChain() with the interrupts on if it can.
+/* The time a slice kept its channel busy: milliseconds and the microseconds that do not make one yet */
+static VOID AccountBusy(
+    struct BDMAChannel *channel)
+{
+    channel->bc_BusyUs += timer_now() - channel->bc_Start;
+
+    if (channel->bc_BusyUs >= 1000)
+    {
+        channel->bc_BusyMs += channel->bc_BusyUs / 1000;
+        channel->bc_BusyUs %= 1000;
+    }
+}
+
+/* May a second slice of this job run while the first one does? Only when what it reads and what it writes are apart:
+   with an overlap (a scroll inside a bitmap) the order of the rows is the contract.
+*/
+static BOOL Splittable(
+    const struct BDMAJob *j)
+{
+    return !Meets(j->bj_ReadLo, j->bj_ReadHi, j->bj_WriteLo, j->bj_WriteHi);
+}
+
+/* Is a slice of this job being armed? (its starter builds the next chain, which advances the units: one at a time) */
+static BOOL Arming(
+    struct BDMABase *BDMABase,
+    const struct BDMAJob *j)
+{
+    ULONG i;
+
+    for (i = 0; i < BDMABase->bdb_Channels; i++)
+    {
+        if (BDMABase->bdb_Channel[i].bc_Job == j && BDMABase->bdb_Channel[i].bc_Starting)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/* May this job go on a channel now? It conflicts with no job that runs on a channel (a slice of the job itself does not count)
+   and with no OLDER job still in the queue (a job never overtakes an older one it conflicts with: the result is that of
+   the jobs run one by one).
+*/
+static BOOL Free(
+    struct BDMABase *BDMABase,
+    struct BDMAJob *j)
+{
+    struct BDMAJob *o;
+    ULONG i;
+
+    for (i = 0; i < BDMABase->bdb_Channels; i++)
+    {
+        struct BDMAJob *run = BDMABase->bdb_Channel[i].bc_Job;
+
+        if (run != NULL && run != j && Conflict(j, run))
+        {
+            return FALSE;
+        }
+    }
+
+    /* the queue is in the order of submission: the older jobs are in front of this one */
+    for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); o != j; o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
+    {
+        if (Conflict(j, o))
+        {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+/* Picks the slice that may start now on an idle channel and hands the channel to it.
+   First choice: the job that has none on a channel, the best priority and then the order of submission. Only when no such job
+   can start, a job that is already running and can be split gets a second slice on the idle channel (the opportunistic use of
+   the second channel: nothing else waits for it).
+   Called with the interrupts off (Disable(), or from the interrupt). The channel is taken; the caller then calls
+   BDMA_StartOnChannel() with the interrupts on if it can.
 */
 static struct BDMAChannel *Pick(
-    struct BDMABase *BDMABase, 
+    struct BDMABase *BDMABase,
     struct BDMAJob **picked)
 {
-    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAChannel *channel = NULL;
-    struct BDMAJob *best = NULL, *j, *o;
+    struct BDMAJob *best = NULL, *j;
     ULONG i;
 
     for (i = 0; i < BDMABase->bdb_Channels; i++)
@@ -122,47 +194,38 @@ static struct BDMAChannel *Pick(
         return NULL;
     }
 
-    for (j = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
-        j->bj_Node.mln_Succ != NULL; 
+    for (j = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head);
+        j->bj_Node.mln_Succ != NULL;
         j = BDMA_NODEJOB(j->bj_Node.mln_Succ))
     {
-        BOOL free = TRUE;
-
-        if (best != NULL && j->bj_Request.bdr_Priority <= best->bj_Request.bdr_Priority)
+        if (j->bj_Active != 0 || (best != NULL && j->bj_Request.bdr_Priority <= best->bj_Request.bdr_Priority))
         {
             continue;
         }
 
-        for (i = 0; i < BDMABase->bdb_Channels && free; i++)
+        if (Free(BDMABase, j))
         {
-            struct BDMAJob *run = BDMABase->bdb_Channel[i].bc_Job;
-
-            if (run != NULL && Conflict(j, run))
-            {
-                free = FALSE;
-            }
+            best = j;
         }
-
-        /* the queue is in the order of submission: the older jobs are in front of this one */
-        for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
-             o != j && free; 
-             o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
-        {
-            if (Conflict(j, o))
-            {
-                free = FALSE;
-            }
-        }
-
-        if (!free && !j->bj_Deferred)
+        else if (!j->bj_Deferred)
         {
             j->bj_Deferred = 1;
             BDMABase->bdb_Deferred++;
         }
+    }
 
-        if (free)
+    if (best == NULL)
+    {
+        for (j = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head);
+            j->bj_Node.mln_Succ != NULL;
+            j = BDMA_NODEJOB(j->bj_Node.mln_Succ))
         {
-            best = j;
+            if (j->bj_Active != 0 && j->bj_Active < BDMABase->bdb_Channels && j->bj_Stop == 0 &&
+                j->bj_Unit < j->bj_Units && Splittable(j) && !Arming(BDMABase, j) && Free(BDMABase, j))
+            {
+                best = j;
+                break;
+            }
         }
     }
 
@@ -171,26 +234,97 @@ static struct BDMAChannel *Pick(
         return NULL;
     }
 
-    Remove(BDMA_JOBNODE(best));
-    BDMABase->bdb_Waiting--;
-
-    if (timer_now() - best->bj_Queued > BDMABase->bdb_WaitMax)
+    if (best->bj_Active == 0)
     {
-        BDMABase->bdb_WaitMax = timer_now() - best->bj_Queued;
+        /* the first slice of this stay in the queue */
+        BDMABase->bdb_Waiting--;
+
+        if (timer_now() - best->bj_Queued > BDMABase->bdb_WaitMax)
+        {
+            BDMABase->bdb_WaitMax = timer_now() - best->bj_Queued;
+        }
+
+        best->bj_State = BJS_RUNNING;
     }
 
-    best->bj_State = BJS_RUNNING;   /* the time starts when StartChain() arms the channel, not here: until then the job is bj_Starting */
-    best->bj_Starting = 1;
-    best->bj_AbortReq = 0;
-    best->bj_Channel = channel - BDMABase->bdb_Channel;
+    best->bj_Active++;
+    channel->bc_Starting = 1;    /* the time starts when the channel is armed, not here */
     channel->bc_Job = best;
     *picked = best;
 
     return channel;
 }
 
+/* The job ends early (abort, timeout, hardware error): no more slices go to a channel, the ones on a channel are stopped,
+   except a slice that is being armed, whose starter ends the job. Called with the interrupts off. TRUE when nothing is left
+   of the job on a channel: it is settled (state, error and counters), and the caller replies it.
+*/
+BOOL BDMA_KillJob(
+    struct BDMABase *BDMABase,
+    struct BDMAJob *job,
+    LONG error)
+{
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    ULONG i;
+
+    if (job->bj_Stop == 0)
+    {
+        job->bj_Stop = error;
+    }
+
+    if (job->bj_InQueue)
+    {
+        Remove(BDMA_JOBNODE(job));
+        job->bj_InQueue = 0;
+
+        if (job->bj_Active == 0)
+        {
+            BDMABase->bdb_Waiting--;
+        }
+    }
+
+    for (i = 0; i < BDMABase->bdb_Channels; i++)
+    {
+        struct BDMAChannel *channel = &BDMABase->bdb_Channel[i];
+
+        if (channel->bc_Job == job && !channel->bc_Starting)
+        {
+            AccountBusy(channel);
+            BDMABase->bdb_Backend->Stop(channel);
+            channel->bc_Job = NULL;
+            job->bj_Active--;
+        }
+    }
+
+    if (job->bj_Active != 0)
+    {
+        return FALSE;
+    }
+
+    job->bj_Error = job->bj_Stop;
+    job->bj_Done = 0;
+
+    if (job->bj_Stop == BDERR_ABORTED)
+    {
+        job->bj_State = BJS_ABORTED;
+        BDMABase->bdb_Aborts++;
+    }
+    else
+    {
+        job->bj_State = BJS_FAILED;
+        BDMABase->bdb_Failures++;
+
+        if (job->bj_Stop == BDERR_TIMEOUT)
+        {
+            BDMABase->bdb_Timeouts++;
+        }
+    }
+
+    return TRUE;
+}
+
 /* Builds the chain of the next slice of the job on its channel, then arms the channel. The channel has belonged to the job
-   since Pick(), but the task that builds can be preempted meanwhile and the job aborted: the state is looked at and the
+   since Pick(), but the task that builds can be preempted meanwhile and the job stopped: the state is looked at and the
    channel started in one breath, with the interrupts off.
 */
 VOID BDMA_StartOnChannel(
@@ -203,23 +337,35 @@ VOID BDMA_StartOnChannel(
     BDMABase->bdb_Backend->Build(BDMABase, channel, job);
 
     Disable();
-    job->bj_Starting = 0;
+    channel->bc_Starting = 0;
 
-    if (job->bj_AbortReq)
+    if (job->bj_Stop != 0)
     {
+        BOOL settled;
+
         channel->bc_Job = NULL;
-        BDMABase->bdb_Aborts++;
-        job->bj_State = BJS_ABORTED;
-        job->bj_Error = BDERR_ABORTED;
-        job->bj_Done = 0;
+        job->bj_Active--;
+        settled = BDMA_KillJob(BDMABase, job, job->bj_Stop);
         Enable();
 
-        BDMA_ReplyJob(BDMABase, job);
+        if (settled)
+        {
+            BDMA_ReplyJob(BDMABase, job);
+        }
+
         return;
     }
 
-    job->bj_Start = timer_now();
+    channel->bc_Start = timer_now();
     BDMABase->bdb_Backend->Arm(channel);
+
+    /* every unit is on a channel: nothing is left to give */
+    if (job->bj_Unit >= job->bj_Units && job->bj_InQueue)
+    {
+        Remove(BDMA_JOBNODE(job));
+        job->bj_InQueue = 0;
+    }
+
     Enable();
 }
 
@@ -251,8 +397,8 @@ void BDMA_Run(
 
 /* The watchdog: a vertical blank server, 50 or 60 times a second.
    A slice that has been on its channel longer than the BDJ_Timeout
-   of its job is given up: the channel is stopped, the job is replied
-   with BDERR_TIMEOUT and what waited for the channel goes on.
+   of its job is given up: the job is stopped (its other slice too),
+   replied with BDERR_TIMEOUT and what waited for the channel goes on.
    The resolution is a tick. (The time is read with the interrupts off,
    so that a slice that starts meanwhile is not taken for a late one.)
 */
@@ -271,20 +417,18 @@ static ULONG Tick(
         Disable();
         job = channel->bc_Job;
 
-        if (job != NULL && job->bj_State == BJS_RUNNING && !job->bj_Starting &&
-            !job->bj_Test && job->bj_Request.bdr_Timeout != 0 &&
-            timer_now() - job->bj_Start > job->bj_Request.bdr_Timeout)
+        if (job != NULL && !channel->bc_Starting && !job->bj_Test && job->bj_Request.bdr_Timeout != 0 &&
+            timer_now() - channel->bc_Start > job->bj_Request.bdr_Timeout)
         {
-            BDMABase->bdb_Backend->Stop(channel);
-            channel->bc_Job = NULL;
-            job->bj_State = BJS_FAILED;
-            job->bj_Error = BDERR_TIMEOUT;
-            job->bj_Done = 0;
-            BDMABase->bdb_Failures++;
-            BDMABase->bdb_Timeouts++;
+            BOOL settled = BDMA_KillJob(BDMABase, job, BDERR_TIMEOUT);
+
             Enable();
 
-            BDMA_ReplyJob(BDMABase, job);
+            if (settled)
+            {
+                BDMA_ReplyJob(BDMABase, job);
+            }
+
             again = TRUE;
         }
         else
@@ -299,34 +443,6 @@ static ULONG Tick(
     }
 
     return 0;
-}
-
-/* A job that has slices left goes back to the queue where its order of submission puts it:
-   the queue is in that order, which is what lets a job see the older ones that it must wait
-   for (footprints). Called by the interrupt.
-*/
-static VOID Requeue(
-    struct BDMABase *BDMABase, 
-    struct BDMAJob *job)
-{
-    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
-    struct BDMAJob *o;
-
-    job->bj_State = BJS_QUEUED;
-    BDMA_ENQUEUED(BDMABase, job);
-
-    for (o = BDMA_NODEJOB(BDMABase->bdb_Queue.mlh_Head); 
-         o->bj_Node.mln_Succ != NULL; 
-         o = BDMA_NODEJOB(o->bj_Node.mln_Succ))
-    {
-        if (o->bj_Sequence > job->bj_Sequence)
-        {
-            break;
-        }
-    }
-
-    Insert((struct List *)&BDMABase->bdb_Queue, 
-        BDMA_JOBNODE(job), (struct Node *)o->bj_Node.mln_Pred);
 }
 
 /* The end of a job: statistics,
@@ -385,37 +501,57 @@ static VOID Finish(
     }
 }
 
-/* The backend tells that the slice on the channel is over (error: BDERR_OK or BDERR_HW). Called by the interrupt of the channel:
-   the job goes back to the queue if it has slices left, or ends; then the next jobs that can start do.
+/* The backend tells that the slice on the channel is over (error: BDERR_OK or BDERR_HW). Called by the interrupt of the channel.
+   The job goes on if it has slices left (it waits its turn again when none of its slices is on a channel, so that a more urgent
+   job may go first), or ends when the last one is over; then the next slices that can start do.
 */
 VOID BDMA_ChannelEnded(
     struct BDMABase *BDMABase,
     struct BDMAChannel *channel,
     LONG error)
 {
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAJob *job = channel->bc_Job;
 
     channel->bc_Job = NULL;
 
     if (job != NULL)
     {
-        channel->bc_BusyUs += timer_now() - job->bj_Start;
+        AccountBusy(channel);
+        job->bj_Active--;
 
-        if (channel->bc_BusyUs >= 1000)
-        {
-            channel->bc_BusyMs += channel->bc_BusyUs / 1000;
-            channel->bc_BusyUs %= 1000;
-        }
-
-        if (error == BDERR_OK && job->bj_Unit < job->bj_Units)
-        {
-            /* another slice: the job waits its turn again, a more urgent one may go first */
-            BDMABase->bdb_Slices++;
-            Requeue(BDMABase, job);
-        }
-        else
+        if (job->bj_Test)
         {
             Finish(BDMABase, job, error);
+        }
+        else if (error != BDERR_OK)
+        {
+            /* the other slice of the job, if any, is stopped with it */
+            BOOL settled;
+
+            Disable();
+            settled = BDMA_KillJob(BDMABase, job, error);
+            Enable();
+
+            if (settled)
+            {
+                BDMA_ReplyJob(BDMABase, job);
+            }
+        }
+        else if (job->bj_Unit < job->bj_Units)
+        {
+            BDMABase->bdb_Slices++;
+
+            if (job->bj_Active == 0)
+            {
+                /* the job waits its turn again (it is still in the queue, in its place) */
+                job->bj_State = BJS_QUEUED;
+                BDMA_ENQUEUED(BDMABase, job);
+            }
+        }
+        else if (job->bj_Active == 0)
+        {
+            Finish(BDMABase, job, BDERR_OK);
         }
     }
 

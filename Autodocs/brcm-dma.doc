@@ -38,6 +38,9 @@ brcm-dma.resource/BDMA_AbortJob                     brcm-dma.resource/BDMA_Abort
 
 	What the job had already written stays written.
 
+	When a slice of the job is being armed at that moment (its task was preempted, or it is in an interrupt) the reply comes a moment later, from that
+	slice: follow the call with BDMA_WaitJob(), as with AbortIO() and WaitIO().
+
    INPUTS
 	job             a job
 
@@ -500,6 +503,10 @@ brcm-dma.resource/BDMA_StartJob                     brcm-dma.resource/BDMA_Start
 	Queues the job, described by BDMA_AllocJobTagList(). It allocates nothing and parses nothing: a software interrupt may call it (the next block of a
 	transfer, for instance). When the job is over it is replied to its reply port, with the result in bj_Error and the bytes in bj_Done. With
 	BDJ_NoWait and every channel busy it is replied at once, with BDERR_BUSY. A job that is in flight is left alone.
+
+	A big job is run in slices of about 1 MB. When its reads and its writes do not overlap (a copy, a fill, a rectangle; not a move inside one
+	bitmap) and the second channel has nothing else to do, two slices of the job run on the two channels at once: the transfer is up to 1.6 times
+	faster. The second channel is only lent: a job that arrives meanwhile waits at most one slice.
 
    INPUTS
 	job             a job

@@ -60,7 +60,8 @@ struct BDMAJob * L_BDMA_AllocJobTagList(
             else
             {
                 job->bj_Request = request;
-                job->bj_Channel = -1;
+                job->bj_Active = 0;
+                job->bj_InQueue = 0;
                 job->bj_State = BJS_IDLE;
                 job->bj_Client = client;
                 error = BDMA_CheckRequest(BDMABase, job);

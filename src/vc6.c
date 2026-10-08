@@ -110,12 +110,19 @@ static VOID Build(
     {
         /* The constant: 256 bytes of the value, which is what a burst of 16 beats of 128 bits reads (a burst reads its beats one after
            the other even when the source does not increment: with only 16 bytes the rest of the row got what lay behind them). */
-        for (i = 0; i < CONSTANT_SIZE / 4; i++)
+        /* The same value as the last fill of this channel (the usual case: one colour, many rectangles) needs nothing: the constant is in place, and
+           the cache is not touched again (a call of the system for the cache costs about 41 us, by line a few). */
+        if (!channel->bc_FillSet || channel->bc_Fill != r->bdr_Fill)
         {
-            channel->bc_Constant[i] = r->bdr_Fill;
+            for (i = 0; i < CONSTANT_SIZE / 4; i++)
+            {
+                channel->bc_Constant[i] = r->bdr_Fill;
+            }
+
+            BDMA_PushLines((ULONG)channel->bc_Constant, CONSTANT_SIZE);
+            channel->bc_Fill = r->bdr_Fill;
+            channel->bc_FillSet = TRUE;
         }
-        
-        CacheClearE((APTR)channel->bc_Constant, CONSTANT_SIZE, CACRF_ClearD);
     }
 
     /* One slice: the units from bj_Unit on, until about a megabyte or the capacity of the chain */
@@ -256,6 +263,8 @@ static ULONG SelfTest(
 
     Disable();
     channel->bc_Job = &job;
+    channel->bc_Starting = 1;
+    job.bj_Active = 1;
     job.bj_State = BJS_RUNNING;
     Enable();
 

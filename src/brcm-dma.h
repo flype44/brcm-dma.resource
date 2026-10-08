@@ -166,6 +166,10 @@ struct BDMAChannel
     ULONG               bc_TestCS;          /* the registers of the channel when the self test gave up, and whether the data arrived */
     ULONG               bc_TestCB;
     ULONG               bc_TestCopied;
+    ULONG               bc_Fill;            /* the value that bc_Constant holds (a fill with the same value does not write it again) */
+    BOOL                bc_FillSet;
+    volatile UBYTE      bc_Starting;        /* picked, but the chain is not armed yet: the watchdog leaves it alone, a stop is settled by the starter */
+    ULONG               bc_Start;           /* the timer when the slice that runs went on the channel */
     ULONG               bc_BusyUs;          /* the time its slices ran: milliseconds and the microseconds that do not make one yet */
     ULONG               bc_BusyMs;
 };
@@ -256,6 +260,7 @@ VOID BDMA_Run(struct BDMABase *BDMABase);
         if (++(base)->bdb_Waiting > (base)->bdb_QueueMax) (base)->bdb_QueueMax = (base)->bdb_Waiting; \
     } while (0)
 
+BOOL BDMA_KillJob(struct BDMABase *BDMABase, struct BDMAJob *job, LONG error);
 VOID BDMA_StartOnChannel(struct BDMABase *BDMABase, struct BDMAChannel *channel, struct BDMAJob *job);
 VOID BDMA_ChannelEnded(struct BDMABase *BDMABase, struct BDMAChannel *channel, LONG error);
 

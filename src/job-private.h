@@ -23,11 +23,10 @@
     ULONG               bj_WaitMask;
     ULONG               bj_Queued;          /* the timer when it entered the queue (submission, or back after a slice): the wait statistic */
     UBYTE               bj_Deferred;        /* already counted in bdb_Deferred for this stay in the queue */
-    ULONG               bj_Start;           /* the timer when the slice that runs went on its channel */
     volatile UBYTE      bj_State;           /* BJS_*: changed by the interrupt */
-    volatile UBYTE      bj_Starting;        /* picked, on its channel (BJS_RUNNING), but the chain is not armed yet: the watchdog leaves it alone, an abort is deferred */
-    volatile UBYTE      bj_AbortReq;        /* an abort came while it was starting: the starter ends the job instead of arming the channel */
-    BYTE                bj_Channel;         /* index in bdb_Channel while it runs */
+    volatile UBYTE      bj_Active;          /* slices of the job on channels now (0 to the number of channels): a job that can be split has two at a time */
+    volatile UBYTE      bj_InQueue;         /* in the queue: while it still has slices to give to a channel (running or not) */
+    volatile LONG       bj_Stop;            /* 0, or the error (BDERR_ABORTED, BDERR_TIMEOUT, BDERR_HW) that ended the job early: no more slices, the starter of a slice settles it */
     UBYTE               bj_Reverse;         /* a move whose destination is above the source: the rows go from the last to the first */
     UBYTE               bj_Test;            /* the self test: no statistics, no reply */
     UBYTE               bj_Auto;            /* made by BDMA_AddJobTagList(): freed by the call that ends it */

@@ -101,55 +101,31 @@ void BDMA_ReplyJob(
     }
 }
 
-/* Stops the job, in the queue or on its channel,
-   and replies it with BDERR_ABORTED;
+/* Stops the job, in the queue or on its channels,
+   and replies it with BDERR_ABORTED (when a slice is being armed, its starter does it a moment later);
    a job that is over already is left alone
 */
 void BDMA_AbortInternal(
-    struct BDMABase *BDMABase, 
+    struct BDMABase *BDMABase,
     struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
-    BOOL aborted = FALSE;
+    BOOL settled = FALSE;
 
     Disable();
 
-    if (job->bj_State == BJS_QUEUED)
+    if (job->bj_State == BJS_QUEUED || job->bj_State == BJS_RUNNING)
     {
-        Remove(BDMA_JOBNODE(job));
-        BDMABase->bdb_Waiting--;
-        aborted = TRUE;
-    }
-    else if (job->bj_State == BJS_RUNNING && job->bj_Starting)
-    {
-        /* picked, its chain not armed yet (the starter was preempted, or is in the interrupt): the channel is not touched
-           and the job not replied here; StartChain() sees the request, gives the channel back and replies */
-        job->bj_AbortReq = 1;
-    }
-    else if (job->bj_State == BJS_RUNNING)
-    {
-        struct BDMAChannel *channel = &BDMABase->bdb_Channel[job->bj_Channel];
-
-        BDMABase->bdb_Backend->Stop(channel);
-        channel->bc_Job = NULL;
-        aborted = TRUE;
-    }
-
-    if (aborted)
-    {
-        BDMABase->bdb_Aborts++;
-        job->bj_State = BJS_ABORTED;
-        job->bj_Error = BDERR_ABORTED;
-        job->bj_Done = 0;
+        settled = BDMA_KillJob(BDMABase, job, BDERR_ABORTED);
     }
 
     Enable();
 
-    if (aborted)
+    if (settled)
     {
         BDMA_ReplyJob(BDMABase, job);
 
-        /* the channel it held, and what it was holding back */
+        /* the channels it held, and what it was holding back */
         BDMA_Run(BDMABase);
     }
 }

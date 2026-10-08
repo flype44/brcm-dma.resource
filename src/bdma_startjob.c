@@ -81,7 +81,8 @@ VOID L_BDMA_StartJob(
     job->bj_Msg.mn_Length = sizeof(struct BDMAJob);
     job->bj_Error = BDERR_OK;
     job->bj_Done = 0;
-    job->bj_Channel = -1;
+    job->bj_Active = 0;
+    job->bj_Stop = 0;
     job->bj_Unit = 0;
     job->bj_Units = 0;
     job->bj_Taken = 0;
@@ -131,6 +132,7 @@ VOID L_BDMA_StartJob(
     job->bj_Sequence = ++BDMABase->bdb_Sequence;
     job->bj_State = BJS_QUEUED;
     AddTail((struct List *)&BDMABase->bdb_Queue, BDMA_JOBNODE(job));
+    job->bj_InQueue = 1;
     BDMA_ENQUEUED(BDMABase, job);
     Enable();
 
