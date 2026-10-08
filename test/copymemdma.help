@@ -1,0 +1,125 @@
+   NAME
+
+	COPYMEMDMA - Gives the big memory copies of the system to the DMA.
+
+   FORMAT
+
+	COPYMEMDMA [CM] [CMQ] [THRESHOLD <bytes>] [REMOVE] [STATUS] [FORCE]
+
+   TEMPLATE
+
+	CM/S,CMQ/S,THRESHOLD/N,REMOVE/S,STATUS/S,FORCE/S
+
+   PATH
+
+	C:COPYMEMDMA
+
+   FUNCTION
+
+	COPYMEMDMA patches Exec's CopyMem() and CopyMemQuick() so that the large
+	copies are done by the DMA engine of the Raspberry Pi, through
+	brcm-dma.resource, instead of by the 68k. The task that copies sleeps
+	while the DMA works: the 68k is free for the others.
+
+	It is made for a PiStorm with Emu68 whose ROM holds brcm-dma.resource. It
+	is first a stress test and a benchmark of the resource: every task of the
+	system becomes a client of the DMA.
+
+	CM        - Patch CopyMem().
+	CMQ       - Patch CopyMemQuick().
+	THRESHOLD - The smallest copy, in bytes, that goes to the DMA. Default
+	            1048576. At least 1. A smaller copy is done by the routine that
+	            was there before, at the price of one comparison. Under 16384 the
+	            command refuses, unless FORCE is given.
+	REMOVE    - Take the patch off.
+	FORCE     - Accept a THRESHOLD under 16384 bytes. A DMA job costs about
+	            150 microseconds whatever its size, the CPU copies a small block
+	            in less than one: with a small threshold a program that copies
+	            many small blocks (a MUI application, for instance) takes
+	            minutes. For stress tests only.
+	STATUS    - Show the state of the patch that is installed, without
+	            changing it: the threshold, the copies done by the DMA, those
+	            that were given back to the CPU after a job, those that the CPU
+	            did because of the rules, and the tasks that are in the DMA
+	            path right now, with the size of their copy. A task that stays
+	            there while the system waits is the one that is stuck.
+
+	At least one of CM and CMQ is needed to install the patch. There is no
+	need to run the command in the background: it detaches itself, the shell
+	gets its prompt back and the patch stays in memory.
+
+	Started from Workbench, there are no arguments: both functions are
+	patched, with the default threshold.
+
+	A copy goes to the DMA only if all of this is true: its size reaches the
+	THRESHOLD; the caller is a task that may sleep (no Forbid(), no
+	Disable(), not an interrupt); the two blocks do not overlap; both lie in
+	fast memory (not MEMF_CHIP, not MEMF_24BITDMA), outside the bus of the
+	Amiga (below 2 MB: the Chip RAM; from 10 MB to 16 MB: PCMCIA, CIAs,
+	chipset, clock, ROM) and outside the table
+	of the 68k vectors (VBR, read when the patch is installed): those
+	addresses are not in the RAM of the Pi, the DMA cannot reach them; enough
+	stack is left for the calls into the resource. In every other case, and
+	when the resource refuses a job or does not finish it, the copy is done
+	by the routine that was there before: a copy is never lost, and the
+	resource may be unavailable at any time.
+
+	The addresses need no alignment: the DMA takes any address and any
+	length. Both caches are looked after by the resource.
+
+	If the command is started while the patch is installed, it says so and
+	changes nothing. REMOVE waits for the copies that are in flight, puts the
+	old vectors back, and prints how many copies went to the DMA and how
+	many were given back to the CPU.
+
+	The vectors are put back only if they still point to this patch. If
+	another program patched the same function since, the vector cannot be
+	taken out of the chain: the patch then stays in memory, passes every call
+	on to the routine that was there before, and REMOVE can be tried again
+	later.
+
+   NOTES
+
+	The patch is a process that sleeps, named "copymemdma", and a public
+	semaphore of the same name that holds the state. Do not break the
+	process by hand (CTRL_C from a shell is not sent to it): use REMOVE.
+
+	The copies below the THRESHOLD are not counted. A low THRESHOLD (a few
+	kilobytes) sends many small jobs to the resource and slows the system
+	down: it is meant for testing. The copies of the 68k are faster than a
+	DMA job up to a size that depends on the machine; measure it before
+	choosing a value.
+
+	The DMA is shared with the drivers that use the resource (the RTG
+	driver, for instance). Watch it with BRCM-DMA-INFO WATCH.
+
+	For further information, please see:
+	https://github.com/flype44/brcm-dma.resource
+
+   EXAMPLES
+
+	> copymemdma CM CMQ
+	  Patch both functions, from 1 MB.
+
+	> copymemdma CMQ THRESHOLD 65536
+	  Patch CopyMemQuick() only, from 64 KB.
+
+	> copymemdma CM CMQ THRESHOLD=4096 FORCE
+	  A low threshold, for a stress test.
+
+	> copymemdma REMOVE
+	  Take the patch off.
+
+   RETURN CODES
+
+	SUCCESS (0)  Installed, or removed.
+	WARN    (5)  Already installed, not installed (REMOVE), or the vector
+	             could not be put back (see FUNCTION).
+	ERROR   (10) Bad arguments, neither CM nor CMQ given, brcm-dma.resource
+	             not present or its engine not available, or the process
+	             could not be created.
+	FAIL    (20) dos.library 36 or newer is not available.
+
+   SEE ALSO
+
+	BRCM-DMA-INFO, BRCM-DMA-TEST, SETPATCH

@@ -31,6 +31,8 @@ include(cmake/verstring.cmake)
 include(cmake/sfdc.cmake)
 
 get_verstring(VERSTRING)
+# the same string for the tools that carry one, under their own name
+string(REPLACE "$VER: ${PROJECT_NAME} " "$VER: copymemdma " COPYMEMDMA_VERSTRING "${VERSTRING}")
 sfdc(sfd/brcm-dma_lib.sfd)
 
 add_executable(brcm-dma.resource
@@ -110,6 +112,17 @@ target_include_directories(brcm-dma-cost PRIVATE include src)
 target_link_options(brcm-dma-cost PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-cost amiga brcm_dma)
 
+add_executable(copymemdma
+    test/startup.c
+    test/copymemdma.c
+)
+
+target_compile_options(copymemdma PRIVATE -Os -m68040 -fomit-frame-pointer -std=gnu89 -Wdeclaration-after-statement -Wall -Wno-pointer-sign -Wno-main)
+target_include_directories(copymemdma PRIVATE include src)
+target_compile_definitions(copymemdma PRIVATE VERSION_STRING="${COPYMEMDMA_VERSTRING}")
+target_link_options(copymemdma PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
+target_link_libraries(copymemdma amiga brcm_dma)
+
 add_executable(brcm-dma-stack
     test/startup.c
     test/stack.c
@@ -182,6 +195,9 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/FD/ DESTINATION sdk/FD)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/SFD/ DESTINATION sdk/SFD)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Autodocs/ DESTINATION sdk/Autodocs)
 
-foreach(tool brcm-dma-test brcm-dma-stress brcm-dma-cost brcm-dma-lab brcm-dma-stack brcm-dma-info ${BRCM_DMA_SCREEN})
+foreach(tool brcm-dma-test brcm-dma-stress brcm-dma-cost copymemdma brcm-dma-lab brcm-dma-stack brcm-dma-info ${BRCM_DMA_SCREEN})
     install(PROGRAMS $<TARGET_FILE:${tool}> DESTINATION tools)
 endforeach()
+
+# the help text of the shell command, next to it
+install(FILES test/copymemdma.help DESTINATION tools)
