@@ -46,7 +46,7 @@ SCROLL = `ScrollRaster` (a scroll inside the window), FILL = `RectFill`, LMOVE =
 - **ScrollRaster**: the CPU needs 80% fewer cycles with the DMA (4.27M to 0.89M at 720p, 6.46M to 1.31M at 1080p, 7.24M to 1.40M at 1200p); the rate is +25% at 720p, unchanged at 1080p and 1200p.
   Both thresholds give the same: the scroll jobs are all big.
 - **SizeLayer**: a threshold of **8192 is 29 to 35% slower than no DMA**; 32768 is neutral or better. **MoveLayer**: 8192 -8%, 32768 neutral. The jobs between 8 and 32 KB cost more by DMA than by the CPU.
-- **32768 is better than 8192 in every test**: it is the default of the driver; the ToolType `VC6_DMA_THRESHOLD=8192` of the machine is not the best.
+- **32768 is better than 8192 in every test**: it is the default of the driver; the ToolType `VC6_DMA_THRESHOLD_BLITRECT=8192` of the machine is not the best.
 - **RectFill** (no DMA for the fills by default) is the CPU hog: 2.84M cycles an operation at 720p, 5.87M at 1080p, 6.60M at 1200p, the whole CPU at 270 to 640 operations a second.
 - **MoveLayer** (9.5M to 21M cycles) is CPU work in the driver: a copy between two different bitmaps (`BlitRectNoMaskComplete`) does not go through the DMA.
 
@@ -103,7 +103,7 @@ RectFill: **+27% (720p), +41% (1080p), +34% (1200p)** and 76 to 82% fewer CPU cy
 
 ## 4. What it says
 
-- Threshold of the copies: **32768**. Threshold of the fills: **524288** (about 512 KB). The ToolTypes of the machine read `VC6_DMA_THRESHOLD=8192` and no fill threshold.
+- Threshold of the copies: **32768**. Threshold of the fills: **524288** (about 512 KB). The ToolTypes of the machine read `VC6_DMA_THRESHOLD_BLITRECT=8192` and no fill threshold.
 - The CPU is left free where the jobs are big: scrolls (-80% of cycles), big fills (-80%). The copies between two bitmaps (`MoveLayer`, the main CPU cost left at 9 to 21M cycles) are the next target, in the driver.
 
 ## 5. Shifts to the side, inside the rows (through the buffer of the channel)
