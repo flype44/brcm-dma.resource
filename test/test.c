@@ -88,10 +88,14 @@ static const struct Case cases[] = {
       { { BDJ_Src, 0x1000 }, { BDJ_FillValue, 1 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
     { "neither a source nor a value",
       { { BDJ_Dst, 0x2000 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
-    { "an address that is not 4 byte aligned",
-      { { BDJ_Src, 0x1002 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
-    { "a length that is not a multiple of 4",
-      { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 62 }, { TAG_DONE, 0 } }, BDERR_ARGS },
+    { "a copy from an address that is not 4 byte aligned",
+      { { BDJ_Src, 0x1002 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_OK },
+    { "a copy of a length that is not a multiple of 4",
+      { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 62 }, { TAG_DONE, 0 } }, BDERR_OK },
+    { "a fill at an address that is not 4 byte aligned",
+      { { BDJ_FillValue, 1 }, { BDJ_Dst, 0x1002 }, { BDJ_Length, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
+    { "a fill of a length that is not a multiple of 4",
+      { { BDJ_FillValue, 1 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 62 }, { TAG_DONE, 0 } }, BDERR_ARGS },
     { "a pitch smaller than the length",
       { { BDJ_Src, 0x1000 }, { BDJ_Dst, 0x2000 }, { BDJ_Length, 128 }, { BDJ_Rows, 2 }, { BDJ_DstPitch, 64 }, { TAG_DONE, 0 } }, BDERR_ARGS },
     { "too many rows",
@@ -643,7 +647,7 @@ static void StepClient(void)
 
                 /* 2. the same job with other values: a wrong change is refused and leaves it as it was */
                 Check("set: a new length", BDMA_SetJobTags(job, BDJ_Length, 8192, TAG_DONE), BDERR_OK);
-                Check("set: a length that is not a multiple of 4", BDMA_SetJobTags(job, BDJ_Length, 62, TAG_DONE), BDERR_ARGS);
+                Check("set: an empty length", BDMA_SetJobTags(job, BDJ_Length, 0, TAG_DONE), BDERR_ARGS);
                 ClearZone(ZONE_B, 8192, 0);
                 BDMA_StartJob(job);
                 t0 = timer_now();
@@ -1031,8 +1035,8 @@ static ULONG ShiftCase(ULONG start, ULONG width, LONG dx, LONG dy, ULONG rows, U
 
 static void StepShift(void)
 {
-    static const ULONG widths[] = { 4, 16, 60, 128, 1000 };
-    static const LONG shifts[] = { 4, -4, 8, -8, 16, -16, 20, -20, 36, -36, 100, -100, 400, -400 };
+    static const ULONG widths[] = { 4, 7, 16, 60, 61, 128, 1000 };
+    static const LONG shifts[] = { 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 7, -7, 8, -8, 16, -16, 20, -20, 36, -36, 100, -100, 400, -400 };
     static const LONG dys[] = { 0, 1, -1, 3 };
     static const ULONG rowss[] = { 1, 2, 8, 20 };
     ULONG wi, si, di, ri, cases = 0, wrong = 0, seed = 30;
@@ -1044,7 +1048,7 @@ static void StepShift(void)
             ULONG width = widths[wi];
             LONG dx = shifts[si];
 
-            if ((ULONG)(dx < 0 ? -dx : dx) >= width && dx != 4 && dx != -4)
+            if ((ULONG)(dx < 0 ? -dx : dx) >= width)
                 continue;                      /* a shift of a row or more is a move by whole rows: the other steps */
 
             for (di = 0; di < sizeof(dys) / sizeof(dys[0]); di++)
@@ -1052,10 +1056,13 @@ static void StepShift(void)
                 for (ri = 0; ri < sizeof(rowss) / sizeof(rowss[0]); ri++)
                 {
                     ULONG pitch = (width + 31) & ~15UL;
-                    ULONG start = 0x2000 + (cases % 4) * 4;       /* the alignment of the source: 0, 4, 8, 12 */
+                    ULONG start = 0x2000 + (cases % 16);          /* the alignment of the source: every byte of 16 */
 
                     if (pitch < width + 16 && dys[di] != 0)
                         pitch = width + 16;
+
+                    if (cases % 3 == 0)
+                        pitch = width + 13;                       /* a pitch that is not a multiple of 4 */
 
                     wrong += ShiftCase(start, width, dx, dys[di], rowss[ri], pitch, seed++);
                     cases++;
@@ -1066,6 +1073,97 @@ static void StepShift(void)
 
     Printf("  %ld cases, %ld wrong\n", (LONG)cases, (LONG)wrong);
     Check("shift inside a row: every case", wrong, 0);
+}
+
+/* Copies that start and end at any byte, rows with any pitch: random cases checked byte by byte against a model (the source and the destination are in
+   two parts of one zone; everything around the destination must stay as it was). */
+static ULONG Rand(ULONG *seed)
+{
+    *seed = *seed * 1103515245UL + 12345UL;
+
+    return (*seed >> 8) & 0xffffff;
+}
+
+static void StepOdd(void)
+{
+    UBYTE *zone = arena + ZONE_A;
+    static UBYTE model[SHIFTZONE];
+    static UBYTE orig[SHIFTZONE];
+    ULONG seed = 99, n, i, r, bad, cases = 0, wrong = 0;
+
+    for (n = 0; n < 1500; n++)
+    {
+        ULONG len = 1 + Rand(&seed) % 1500;
+        ULONG rows = 1 + Rand(&seed) % 6;
+        ULONG sp = len + Rand(&seed) % 41;
+        ULONG dp = len + Rand(&seed) % 41;
+        ULONG so = Rand(&seed) % 16;
+        ULONG dstart = 0x8000 + Rand(&seed) % 16;
+        ULONG sstart = 0x1000 + so;
+        BOOL nocache = Rand(&seed) % 4 == 0;
+        LONG e;
+
+        FillWords((ULONG *)zone, SHIFTZONE / 4, 40 + n);
+
+        for (i = 0; i < SHIFTZONE; i++)
+        {
+            model[i] = zone[i];
+            orig[i] = zone[i];
+        }
+
+        for (r = 0; r < rows; r++)
+            for (i = 0; i < len; i++)
+                model[dstart + r * dp + i] = zone[sstart + r * sp + i];
+
+        /* BDJ_NoCache: the cache is the caller's (push what was written, and drop what the DMA writes, around the job) */
+        if (nocache)
+            CacheClearE(zone, SHIFTZONE, CACRF_ClearD);
+
+        if (nocache)
+            e = Run((struct TagItem[]){ { BDJ_Src, (ULONG)zone + sstart }, { BDJ_Dst, (ULONG)zone + dstart }, { BDJ_Length, len }, { BDJ_Rows, rows },
+                                        { BDJ_SrcPitch, sp }, { BDJ_DstPitch, dp }, { BDJ_NoCache, TRUE }, { TAG_DONE, 0 } });
+        else
+            e = Run((struct TagItem[]){ { BDJ_Src, (ULONG)zone + sstart }, { BDJ_Dst, (ULONG)zone + dstart }, { BDJ_Length, len }, { BDJ_Rows, rows },
+                                        { BDJ_SrcPitch, sp }, { BDJ_DstPitch, dp }, { TAG_DONE, 0 } });
+
+        if (nocache)
+            CacheClearE(zone, SHIFTZONE, CACRF_ClearD);
+
+        bad = 0;
+        if (e == BDERR_OK)
+            for (i = 0; i < SHIFTZONE; i++)
+                if (zone[i] != model[i])
+                    bad++;
+
+        cases++;
+
+        if (e != BDERR_OK || bad)
+        {
+            wrong++;
+
+            if (wrong < 4 && bad)
+            {
+                ULONG first = 0, same = 0;
+
+                while (first < SHIFTZONE && zone[first] == model[first])
+                    first++;
+
+                for (i = 0; i < SHIFTZONE; i++)
+                    if (zone[i] == orig[i])
+                        same++;
+
+                Printf("  first difference at %ld (the destination starts at %ld): got %02lx, expected %02lx; %ld bytes of the zone are as before the job\n",
+                       (LONG)first, (LONG)dstart, (LONG)zone[first], (LONG)model[first], (LONG)same);
+            }
+
+            if (wrong < 10)
+                Printf("FAIL odd copy len %ld rows %ld sp %ld dp %ld src+%ld dst+%ld: error %ld, %ld bytes differ\n", (LONG)len, (LONG)rows, (LONG)sp, (LONG)dp,
+                       (LONG)so, (LONG)(dstart - 0x8000), e, (LONG)bad);
+        }
+    }
+
+    Printf("  %ld cases, %ld wrong\n", (LONG)cases, (LONG)wrong);
+    Check("copies at any byte: every case", wrong, 0);
 }
 
 int main(int argc, struct WBStartup *wbmsg)
@@ -1138,6 +1236,7 @@ int main(int argc, struct WBStartup *wbmsg)
     if (only < 0 || only == 11) { Printf("step 11: memory above 1 GB (MEMF_REVERSE)\n"); StepHigh(); }
     if (only < 0 || only == 12) { Printf("step 12: a big job on both channels, aborted at random moments\n"); StepSplit(); }
     if (only < 0 || only == 13) { Printf("step 13: a shift inside a row, through the buffer of the channel\n"); StepShift(); }
+    if (only < 0 || only == 14) { Printf("step 14: copies that start and end at any byte\n"); StepOdd(); }
 
     Printf("%ld failed\n", (LONG)failed);
 

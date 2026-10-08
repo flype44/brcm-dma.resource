@@ -46,6 +46,53 @@ static ULONG NowMs(void)
     return (ds.ds_Minute * 60UL * 50UL + ds.ds_Tick) * 20UL;
 }
 
+/* One scroll to the left and one back, checked byte by byte in the memory of the screen against a copy taken before: what is still there after a scroll
+   of dx pixels must be what was dx pixels to the right, and after the scroll back what was not lost must be as it was. Returns the number of bytes that differ. */
+static LONG VerifyScroll(struct RastPort *rp, ULONG rw, ULONG rh, LONG dx)
+{
+    UBYTE *mem = (UBYTE *)p96GetBitMapAttr(rp->BitMap, P96BMA_MEMORY);
+    ULONG bpr = p96GetBitMapAttr(rp->BitMap, P96BMA_BYTESPERROW);
+    ULONG bpp = p96GetBitMapAttr(rp->BitMap, P96BMA_BYTESPERPIXEL);
+    ULONG len = rw * bpp, shift = dx * bpp, row, i, bad1 = 0, bad2 = 0;
+    UBYTE *copy = AllocMem(len * rh, MEMF_ANY);
+
+    if (mem == NULL || copy == NULL)
+    {
+        if (copy)
+            FreeMem(copy, len * rh);
+
+        return -1;
+    }
+
+    WaitBlit();
+
+    for (row = 0; row < rh; row++)
+        for (i = 0; i < len; i++)
+            copy[row * len + i] = mem[row * bpr + i];
+
+    ScrollRaster(rp, dx, 0, 0, 0, rw - 1, rh - 1);
+    WaitBlit();
+
+    for (row = 0; row < rh; row++)
+        for (i = 0; i + shift < len; i++)
+            if (mem[row * bpr + i] != copy[row * len + i + shift])
+                bad1++;
+
+    ScrollRaster(rp, -dx, 0, 0, 0, rw - 1, rh - 1);
+    WaitBlit();
+
+    for (row = 0; row < rh; row++)
+        for (i = shift; i < len; i++)
+            if (mem[row * bpr + i] != copy[row * len + i])
+                bad2++;
+
+    FreeMem(copy, len * rh);
+
+    Printf("verified: %ld bytes differ after the scroll, %ld after the scroll back (%ld bytes a pixel, %ld bytes a row)\n", (LONG)bad1, (LONG)bad2, (LONG)bpp, (LONG)bpr);
+
+    return (LONG)(bad1 + bad2);
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
     LONG args[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -148,6 +195,9 @@ int main(int argc, struct WBStartup *wbmsg)
         }
 
         WaitBlit();
+
+        if (dy == 0 && dx > 0)
+            VerifyScroll(rp, rw, rh, dx);
 
         t0 = NowMs();
         t1 = t0;

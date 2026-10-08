@@ -79,10 +79,14 @@ LONG BDMA_ParseTags(
         return BDERR_ARGS;
     }
 
-    if ((r->bdr_Length == 0) || 
-        (r->bdr_Length & 3) || 
-        (r->bdr_Dst & 3) || 
-        ((r->bdr_Given & BDRF_SRC) && (r->bdr_Src & 3)))
+    if (r->bdr_Length == 0)
+    {
+        return BDERR_ARGS;
+    }
+
+    /* A copy or a move starts and ends at any byte, with any pitch (measured: the DMA writes the bytes of a partial word and leaves the others alone).
+       A fill repeats a 32 bit value from the start of the destination: its address, its length and its pitch are in whole words. */
+    if ((r->bdr_Given & BDRF_FILL) && ((r->bdr_Length & 3) || (r->bdr_Dst & 3) || (r->bdr_Rows > 1 && (r->bdr_DstPitch & 3))))
     {
         return BDERR_ARGS;
     }
@@ -114,8 +118,7 @@ LONG BDMA_ParseTags(
 
     if ((r->bdr_Rows > 1) && (
         (r->bdr_DstPitch < r->bdr_Length) || 
-        ((r->bdr_Given & BDRF_SRC) && r->bdr_SrcPitch < r->bdr_Length) || 
-        (r->bdr_DstPitch & 3) || (r->bdr_SrcPitch & 3)))
+        ((r->bdr_Given & BDRF_SRC) && r->bdr_SrcPitch < r->bdr_Length)))
     {
         return BDERR_ARGS;
     }

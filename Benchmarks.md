@@ -162,3 +162,20 @@ slice, the reply of the job and the cache of the small ones, and the building an
 
 A small job costs about 21 us of the CPU in the interrupt (3500 jobs a second would be 7% of the CPU), a slice of 1 MB about 36 us for 1 ms of transfer (3.6%): the chain of the next slice is built in the
 interrupt and it is not a problem. The figures are means: the longest interrupt is not measured.
+
+## 7. Shifts of one to three bytes (8, 16 and 24 bit screens): the DMA writes at any byte
+
+`ScrollRaster` of 1 pixel in 8, 16 and 24 bit is a shift of 1, 2 or 3 bytes. The resource refused every address, length and pitch that was not a multiple of 4, and the driver fell back on the VPU, which is very slow
+for a shift of less than four bytes (17 to 18 operations a second at 640x480, about 55 ms an operation whatever the depth; 11 at 1280x720x8). **Measured on the Pi 4B** (a copy of 6 lengths from 4 to 1000 bytes
+for the 15 combinations of source and destination offsets 0 to 3, RAM to RAM: 90 cases, every byte right, the bytes around the destination untouched, no error, no freeze) the DMA writes the bytes of a partial word and
+leaves the others alone. The restriction is removed for copies and moves (a fill still needs whole words: it repeats a 32 bit value). `brcm-dma-test` step 13 (1856 shifts, widths 4 to 1000, shifts of 1 to 400 bytes
+to both sides, odd pitches, every alignment of the source) and step 14 (1500 random copies, every alignment, lengths 1 to 1500, odd pitches, with and without `BDJ_NoCache`) compare every byte of the zone with a model:
+0 wrong. `brcm-dma-scroll` checks the memory of the screen itself, byte by byte, after a scroll of dx pixels and after the scroll back: 0 bytes differ.
+
+`ScrollRaster` to the side, 640x480 (the screen of P96Speed), area of the whole screen:
+
+| Depth | Shift | Before | Now | Factor |
+|---|---|---:|---:|---:|
+| 8 bit | 1, 2, 3 pixels (1, 2, 3 bytes) | 18 op/s | 766, 769, 771 op/s | x43 |
+| 16 bit | 1, 2, 3 pixels (2, 4, 6 bytes) | 17 op/s | 620, 627, 627 op/s | x37 |
+| 24 bit | 1, 2, 3 pixels (3, 6, 9 bytes) | 17 op/s | 484, 485, 499 op/s | x29 |

@@ -41,7 +41,7 @@ struct BDMAJob;
 #define BDJ_Src             (BDMA_Dummy + 1)     /* ULONG, address of the first byte to read (not with BDJ_FillValue) */
 #define BDJ_Dst             (BDMA_Dummy + 2)     /* ULONG, address of the first byte to write (required) */
 #define BDJ_FillValue       (BDMA_Dummy + 3)     /* ULONG, a 32 bit value written again and again (instead of BDJ_Src) */
-#define BDJ_Length          (BDMA_Dummy + 4)     /* ULONG, bytes of a row, a multiple of 4 (required) */
+#define BDJ_Length          (BDMA_Dummy + 4)     /* ULONG, bytes of a row (required; a multiple of 4 for a fill) */
 #define BDJ_Rows            (BDMA_Dummy + 5)     /* ULONG, number of rows, default 1 */
 #define BDJ_SrcPitch        (BDMA_Dummy + 6)     /* ULONG, bytes between two source rows, default BDJ_Length */
 #define BDJ_DstPitch        (BDMA_Dummy + 7)     /* ULONG, bytes between two destination rows, default BDJ_Length */
