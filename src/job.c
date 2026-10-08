@@ -119,6 +119,12 @@ void BDMA_AbortInternal(
         Remove(BDMA_JOBNODE(job));
         aborted = TRUE;
     }
+    else if (job->bj_State == BJS_RUNNING && job->bj_Starting)
+    {
+        /* picked, its chain not armed yet (the starter was preempted, or is in the interrupt): the channel is not touched
+           and the job not replied here; StartChain() sees the request, gives the channel back and replies */
+        job->bj_AbortReq = 1;
+    }
     else if (job->bj_State == BJS_RUNNING)
     {
         struct BDMAChannel *channel = &BDMABase->bdb_Channel[job->bj_Channel];

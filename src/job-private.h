@@ -23,6 +23,8 @@
     ULONG               bj_WaitMask;
     ULONG               bj_Start;           /* the timer when the slice that runs went on its channel */
     volatile UBYTE      bj_State;           /* BJS_*: changed by the interrupt */
+    volatile UBYTE      bj_Starting;        /* picked, on its channel (BJS_RUNNING), but the chain is not armed yet: the watchdog leaves it alone, an abort is deferred */
+    volatile UBYTE      bj_AbortReq;        /* an abort came while it was starting: the starter ends the job instead of arming the channel */
     BYTE                bj_Channel;         /* index in bdb_Channel while it runs */
     UBYTE               bj_Reverse;         /* a move whose destination is above the source: the rows go from the last to the first */
     UBYTE               bj_Test;            /* the self test: no statistics, no reply */

@@ -168,7 +168,6 @@ static VOID StartChain(
     ULONG u, bytes = 0;
 
     job->bj_Units = height * pieces;
-    job->bj_Start = timer_now();
 
     if (fill)
     {
@@ -249,9 +248,28 @@ static VOID StartChain(
         CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
     }
 
+    /* Arming: the chain is built in the buffer of the channel, which the job holds since Pick(), but a task can have been preempted
+       meanwhile and the job aborted. The state is looked at and the channel started in one breath, with the interrupts off. */
+    Disable();
+    job->bj_Starting = 0;
+
+    if (job->bj_AbortReq)
+    {
+        channel->bc_Job = NULL;
+        job->bj_State = BJS_ABORTED;
+        job->bj_Error = BDERR_ABORTED;
+        job->bj_Done = 0;
+        Enable();
+
+        BDMA_ReplyJob(BDMABase, job);
+        return;
+    }
+
+    job->bj_Start = timer_now();
     dma_wr(channel->bc_Number, DMA_CS, CS_END | CS_PROT);
     dma_wr(channel->bc_Number, DMA_CB, chain >> 5);
     dma_wr(channel->bc_Number, DMA_CS, CS_WAIT_FOR_WRITES | CS_ACTIVE | CS_PROT);
+    Enable();
 }
 
 /* Picks the job that may start now on an idle channel and hands it to that channel:
@@ -328,8 +346,9 @@ static struct BDMAChannel *Pick(
     }
 
     Remove(BDMA_JOBNODE(best));
-    best->bj_Start = timer_now();  /* with the state, in the same breath: the watchdog reads both (the chain is built a moment later) */
-    best->bj_State = BJS_RUNNING;
+    best->bj_State = BJS_RUNNING;   /* the time starts when StartChain() arms the channel, not here: until then the job is bj_Starting */
+    best->bj_Starting = 1;
+    best->bj_AbortReq = 0;
     best->bj_Channel = channel - BDMABase->bdb_Channel;
     channel->bc_Job = best;
     *picked = best;
@@ -385,7 +404,7 @@ static ULONG Tick(
         Disable();
         job = channel->bc_Job;
 
-        if (job != NULL && job->bj_State == BJS_RUNNING && 
+        if (job != NULL && job->bj_State == BJS_RUNNING && !job->bj_Starting &&
             !job->bj_Test && job->bj_Request.bdr_Timeout != 0 &&
             timer_now() - job->bj_Start > job->bj_Request.bdr_Timeout)
         {

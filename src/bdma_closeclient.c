@@ -21,8 +21,8 @@
 
 /* Ends the session: what is in flight is aborted, the jobs of the client are
    freed, and so is its port when the client made it. A job that is over but
-   whose reply is still to come (the software interrupt has it) is waited for,
-   a few milliseconds at most. The replies that the client has not taken from
+   whose reply is still to come (the software interrupt has it, or the task that
+   was starting it) is waited for, a few milliseconds at most. The replies that the client has not taken from
    a port of its own are the client's to take before it closes.
 */
 VOID L_BDMA_CloseClient(
@@ -31,7 +31,9 @@ VOID L_BDMA_CloseClient(
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct MinNode *node;
+    struct Task *me = FindTask(NULL);
     ULONG t0;
+    BYTE oldpri;
     BOOL pending;
 
     if (client == NULL)
@@ -44,6 +46,9 @@ VOID L_BDMA_CloseClient(
         BDMA_AbortInternal(BDMABase, BDMA_LINKJOB(node));
     }
 
+    /* An aborted job whose chain was not armed yet is ended by the task that was starting it, which may be preempted by this one:
+       the priority goes down while waiting, so that it can run. */
+    oldpri = SetTaskPri(me, -128);
     t0 = timer_now();
     do
     {
@@ -60,6 +65,7 @@ VOID L_BDMA_CloseClient(
         }
     }
     while (pending && timer_now() - t0 < 50000);
+    SetTaskPri(me, oldpri);
 
     /* the replies that wait on a port that the client made go first:
        they are inside the jobs, which are about to be freed */
