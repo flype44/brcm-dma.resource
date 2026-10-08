@@ -95,6 +95,8 @@ They are plain counters or maxima updated where the event happens (interrupt, or
 | `BDI_Slices` | times a big job went back to the queue for its next slice | whether slicing is used (big jobs exist) |
 | `BDI_Deferred` | jobs held back by a conflict of footprints while a channel was idle | what the ordering rule costs |
 | `BDI_BusyMs0`, `BDI_BusyMs1` | milliseconds the first and second channel (in the order of `BDI_Channels`) ran slices | utilisation and balance of the channels |
+| `BDI_IrqCalls` | interrupts of the channels that ended a slice | how many times the service woke the CPU |
+| `BDI_IrqMCycles`, `BDI_IrqKInstr` | CPU cycles (units of 2^20) and 68k instructions (units of 2^10) spent in those interrupts, from the counters of Emu68 (`MOVEC`, read in the interrupt: it runs in supervisor mode) | what the DMA service costs the CPU: the building of the next slice, the reply, the cache of the small jobs; `brcm-dma-info` prints the average of one interrupt |
 | `BDI_Size64`, `BDI_Size4K`, `BDI_Size32K`, `BDI_Size1M`, `BDI_SizeBig` | jobs done of up to 64 bytes, 4 KB, 32 KB, 1 MB, and more (bytes = length × rows) | the real distribution of job sizes |
 
 Definitions that matter when reading them:

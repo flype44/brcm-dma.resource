@@ -92,6 +92,24 @@ static BOOL Conflict(
            Meets(a->bj_ReadLo, a->bj_ReadHi, b->bj_WriteLo, b->bj_WriteHi);
 }
 
+/* What an interrupt of a channel cost the CPU, in the cycles and the 68k instructions that the counters of Emu68 gave for it: kept as megacycles and
+   kilo instructions with the rest, as the megabytes are */
+VOID BDMA_AccountIrq(
+    struct BDMABase *BDMABase,
+    ULONG cycles,
+    ULONG instructions)
+{
+    BDMABase->bdb_IrqCalls++;
+
+    BDMABase->bdb_IrqCycles += cycles;
+    BDMABase->bdb_IrqMCycles += BDMABase->bdb_IrqCycles >> 20;
+    BDMABase->bdb_IrqCycles &= (1UL << 20) - 1;
+
+    BDMABase->bdb_IrqInstr += instructions;
+    BDMABase->bdb_IrqKInstr += BDMABase->bdb_IrqInstr >> 10;
+    BDMABase->bdb_IrqInstr &= (1UL << 10) - 1;
+}
+
 /* The time a slice kept its channel busy: milliseconds and the microseconds that do not make one yet */
 static VOID AccountBusy(
     struct BDMAChannel *channel)

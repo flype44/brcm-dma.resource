@@ -125,6 +125,9 @@ struct BDMAJob;
 #define BDI_Size32K         (BDMA_Dummy + 56)    /* ULONG *, of up to 32 KB */
 #define BDI_Size1M          (BDMA_Dummy + 57)    /* ULONG *, of up to 1 MB */
 #define BDI_SizeBig         (BDMA_Dummy + 58)    /* ULONG *, of more than 1 MB */
+#define BDI_IrqCalls        (BDMA_Dummy + 59)    /* ULONG *, interrupts of the channels that ended a slice */
+#define BDI_IrqMCycles      (BDMA_Dummy + 60)    /* ULONG *, what they cost the CPU: megacycles (2^20 cycles), from the counters of Emu68 */
+#define BDI_IrqKInstr       (BDMA_Dummy + 61)    /* ULONG *, and 68k instructions in thousands (2^10) */
 
 /* brcm-dma models */
 #define BDM_UNKNOWN    0

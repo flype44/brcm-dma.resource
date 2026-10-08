@@ -186,6 +186,9 @@ ULONG BDMA_FillQuery(
             case BDI_Size32K:   value = s->bds_Size[2]; break;
             case BDI_Size1M:    value = s->bds_Size[3]; break;
             case BDI_SizeBig:   value = s->bds_Size[4]; break;
+            case BDI_IrqCalls:  value = s->bds_IrqCalls; break;
+            case BDI_IrqMCycles: value = s->bds_IrqMCycles; break;
+            case BDI_IrqKInstr: value = s->bds_IrqKInstr; break;
             default: continue;
         }
 

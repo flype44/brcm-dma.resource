@@ -148,3 +148,17 @@ Against the same machine without the buffer (section 1, threshold 32768): **Move
 (9.55M to 1.44M at 720p, 18.8M to 2.1M at 1080p, 21.0M to 2.3M at 1200p, 2.40M to 0.58M for 300x200). The desktop mix, which moves windows, scrolls and draws: +7% with the big window and +32% with the
 small one, with 22% and 35% fewer cycles. `ScrollRaster` (a vertical scroll) and `RectFill` do not change. `brcm-dma-test` step 13 checks 672 shifts (widths 4 to 1000, shifts of 4 to 400 bytes
 to both sides, with 0, 1, -1 and 3 rows of vertical shift, 1 to 20 rows, alignments of the source) against a memmove made by the CPU: 0 wrong.
+
+## 6. What the interrupts cost the CPU
+
+`BDI_IrqCalls`, `BDI_IrqMCycles` and `BDI_IrqKInstr` come from the counters of Emu68 read in the interrupt of the channel (`MOVEC`, supervisor mode), around the whole handler: the acknowledgement, the end of the
+slice, the reply of the job and the cache of the small ones, and the building and arming of the next slice. Measured on the Pi 4B at 1.8 GHz after a reset of the counters:
+
+| Load | Interrupts | Mean of one interrupt |
+|---|---:|---|
+| `brcm-dma-stress` (PATHS and QUEUE: 16099 small jobs) | 16099 | 37888 cycles (21 us), 1566 instructions |
+| `brcm-dma-stress BIG` (16 MB jobs in slices of 1 MB) | 307 | 64512 cycles (36 us), 6981 instructions |
+| start of the Workbench (244 jobs) | 260 | 39936 cycles (22 us), 771 instructions |
+
+A small job costs about 21 us of the CPU in the interrupt (3500 jobs a second would be 7% of the CPU), a slice of 1 MB about 36 us for 1 ms of transfer (3.6%): the chain of the next slice is built in the
+interrupt and it is not a problem. The figures are means: the longest interrupt is not measured.

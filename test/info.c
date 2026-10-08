@@ -33,7 +33,7 @@ struct Snap
 {
     ULONG available, version, interrupt, model, features, channels, classes, maxrows, vbase, vsize;
     ULONG jobs, megabytes, failures, aborts, timeouts, busy, slices, deferred, queuemax, waitmax;
-    ULONG busyms[2], size[5];
+    ULONG busyms[2], size[5], irqcalls, irqmc, irqki;
 };
 
 static const char * const sizeName[5] = { "<=64B", "<=4K", "<=32K", "<=1M", ">1M" };
@@ -85,6 +85,9 @@ static void Query(struct Snap *s)
         BDI_Size32K,   (ULONG)&s->size[2],
         BDI_Size1M,    (ULONG)&s->size[3],
         BDI_SizeBig,   (ULONG)&s->size[4],
+        BDI_IrqCalls,  (ULONG)&s->irqcalls,
+        BDI_IrqMCycles, (ULONG)&s->irqmc,
+        BDI_IrqKInstr, (ULONG)&s->irqki,
         TAG_DONE);
 }
 
@@ -159,6 +162,11 @@ static void Report(const struct Snap *s)
     }
 
     Printf("\n");
+
+    /* what the interrupts cost the CPU (the counters of Emu68, read in the interrupt) */
+    Printf("interrupts: %ld, %ld Mcycles, %ld kinstructions (%ld cycles, %ld instructions each)\n",
+        (LONG)s->irqcalls, (LONG)s->irqmc, (LONG)s->irqki,
+        (LONG)(s->irqcalls ? (s->irqmc * 1024UL / s->irqcalls) * 1024UL : 0), (LONG)(s->irqcalls ? s->irqki * 1024UL / s->irqcalls : 0));
 }
 
 /* The activity between two reads; ms is the time between them */

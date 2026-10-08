@@ -148,6 +148,9 @@ struct BDMAStatus
     ULONG           bds_Deferred;
     ULONG           bds_BusyMs[BDMA_MAX_CHANNELS];
     ULONG           bds_Size[BDMA_SIZE_BUCKETS];
+    ULONG           bds_IrqCalls;
+    ULONG           bds_IrqMCycles;
+    ULONG           bds_IrqKInstr;
 };
 
 struct BDMABase;
@@ -222,6 +225,11 @@ struct BDMABase
     ULONG                   bdb_Slices;          /* times a job went back to the queue for its next slice */
     ULONG                   bdb_Deferred;        /* jobs that held back because of a conflict while a channel was idle */
     ULONG                   bdb_Size[BDMA_SIZE_BUCKETS];
+    ULONG                   bdb_IrqCalls;        /* interrupts of the channels that ended a slice, and what they cost the CPU (Emu68 counters, read in the interrupt) */
+    ULONG                   bdb_IrqCycles;       /* cycles: the megacycles (2^20) are counted in bdb_IrqMCycles, this is what does not make one yet */
+    ULONG                   bdb_IrqMCycles;
+    ULONG                   bdb_IrqInstr;        /* 68k instructions: the same with kilo (2^10) */
+    ULONG                   bdb_IrqKInstr;
     ULONG                   bdb_Classes;         /* BDCLASS_*: the classes of the channels it manages (set when the engine runs) */
     /* the clients (under bdb_Lock), the jobs that are over and wait for the cache and the reply, the software interrupt that does both */
     struct MinList          bdb_Clients;
@@ -266,6 +274,7 @@ VOID BDMA_Run(struct BDMABase *BDMABase);
         if (++(base)->bdb_Waiting > (base)->bdb_QueueMax) (base)->bdb_QueueMax = (base)->bdb_Waiting; \
     } while (0)
 
+VOID BDMA_AccountIrq(struct BDMABase *BDMABase, ULONG cycles, ULONG instructions);
 BOOL BDMA_KillJob(struct BDMABase *BDMABase, struct BDMAJob *job, LONG error);
 VOID BDMA_StartOnChannel(struct BDMABase *BDMABase, struct BDMAChannel *channel, struct BDMAJob *job);
 VOID BDMA_ChannelEnded(struct BDMABase *BDMABase, struct BDMAChannel *channel, LONG error);

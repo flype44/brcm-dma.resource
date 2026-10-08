@@ -337,10 +337,32 @@ static VOID Arm(
    channel in a1 (the is_Data of the interrupt): it acknowledges (level triggered: an
    interrupt that is not acknowledged is a storm) and tells the engine how the slice ended.
 */
+/* The counters of Emu68 (the cycles of the CPU and the 68k instructions): MOVEC, which only the supervisor may do, and the interrupt of a channel
+   runs in the supervisor mode (a MOVEC in user mode crashes the machine: nothing else here reads them). 32 bits, the difference is right when they
+   wrapped once. */
+static inline ULONG ReadCycles(VOID)
+{
+    ULONG v;
+
+    __asm__ volatile("movec #0xe5, %0" : "=r"(v));
+
+    return v;
+}
+
+static inline ULONG ReadInstructions(VOID)
+{
+    ULONG v;
+
+    __asm__ volatile("movec #0xe3, %0" : "=r"(v));
+
+    return v;
+}
+
 static ULONG Interrupt(
     REGARG(struct BDMAChannel *channel, "a1"))
 {
     ULONG cs = dma_rd(channel->bc_Number, DMA_CS);
+    ULONG cycles, instructions;
 
     channel->bc_Calls++;
 
@@ -352,7 +374,12 @@ static ULONG Interrupt(
     /* writing 1 clears them */
     dma_wr(channel->bc_Number, DMA_CS, CS_INT | CS_END | CS_PROT);
 
+    cycles = ReadCycles();
+    instructions = ReadInstructions();
+
     BDMA_ChannelEnded(channel->bc_Base, channel, (cs & CS_ERROR) ? BDERR_HW : BDERR_OK);
+
+    BDMA_AccountIrq(channel->bc_Base, ReadCycles() - cycles, ReadInstructions() - instructions);
 
     return 0;
 }

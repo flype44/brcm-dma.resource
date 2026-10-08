@@ -55,6 +55,9 @@ ULONG L_BDMA_QueryInfoTagList(
     status.bds_Busy      = BDMABase->bdb_Busy;
     status.bds_Slices    = BDMABase->bdb_Slices;
     status.bds_Deferred  = BDMABase->bdb_Deferred;
+    status.bds_IrqCalls  = BDMABase->bdb_IrqCalls;
+    status.bds_IrqMCycles = BDMABase->bdb_IrqMCycles;
+    status.bds_IrqKInstr = BDMABase->bdb_IrqKInstr;
 
     for (i = 0; i < BDMA_MAX_CHANNELS; i++)
     {

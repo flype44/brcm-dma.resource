@@ -39,6 +39,11 @@ VOID L_BDMA_ResetStatistics(
     BDMABase->bdb_Busy = 0;
     BDMABase->bdb_Slices = 0;
     BDMABase->bdb_Deferred = 0;
+    BDMABase->bdb_IrqCalls = 0;
+    BDMABase->bdb_IrqCycles = 0;
+    BDMABase->bdb_IrqMCycles = 0;
+    BDMABase->bdb_IrqInstr = 0;
+    BDMABase->bdb_IrqKInstr = 0;
 
     for (i = 0; i < BDMA_SIZE_BUCKETS; i++)
     {

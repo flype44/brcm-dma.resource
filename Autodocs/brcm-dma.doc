@@ -358,6 +358,9 @@ brcm-dma.resource/BDMA_QueryInfoTagList             brcm-dma.resource/BDMA_Query
 	                BDI_Size32K      of up to 32 KB
 	                BDI_Size1M       of up to 1 MB
 	                BDI_SizeBig      of more than 1 MB
+	                BDI_IrqCalls     interrupts of the channels that ended a slice
+	                BDI_IrqMCycles   what they cost the CPU in megacycles (2^20 cycles), from the counters of Emu68 read in the interrupt
+	                BDI_IrqKInstr    and in 68k instructions, in thousands (2^10)
 
    RESULTS
 	answers         the number of values written
@@ -435,7 +438,7 @@ brcm-dma.resource/BDMA_ResetStatistics          brcm-dma.resource/BDMA_ResetStat
 
    FUNCTION
 	Sets to zero what BDMA_QueryInfoTagList() reports as measures: BDI_Jobs, BDI_MegaBytes, BDI_Failures, BDI_Aborts, BDI_Timeouts, BDI_Busy,
-	BDI_Slices, BDI_Deferred, BDI_WaitMaxUs, BDI_BusyMs0, BDI_BusyMs1 and the sizes BDI_Size64 to BDI_SizeBig. BDI_QueueMax starts again at the
+	BDI_Slices, BDI_Deferred, BDI_WaitMaxUs, BDI_BusyMs0, BDI_BusyMs1 and the sizes BDI_Size64 to BDI_SizeBig, BDI_IrqCalls, BDI_IrqMCycles and BDI_IrqKInstr. BDI_QueueMax starts again at the
 	number of jobs waiting at that moment. The jobs in the queue and on the channels are not touched.
 
 	The counters are shared by every client, and there is no check: whoever calls this resets them for all. It is meant for measuring (read, do
