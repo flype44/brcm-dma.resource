@@ -17,8 +17,10 @@
 
     A copy goes to the DMA only when it can: the size reaches the threshold, the caller is a task that may sleep (no Forbid, no Disable, not
     an interrupt: told by the stack pointer, which is then outside the stack of the task), the blocks do not overlap, and there is stack left
-    for the calls into the resource. Everything else, and any job that the resource refuses or does not finish, is done by the routine that was
-    there before: a copy is never lost, and the resource may be unavailable at any time.
+    for the calls into the resource.
+    The memory is the business of the resource: it refuses a job in memory that the DMA of the Pi does not reach (the Chip RAM, the bus of
+    the Amiga, the vector table...) and the copy is then done by the old routine. This program has no list of its own: it needs a
+    brcm-dma.resource that does that, and must not be run with an older one.
 
     The removal puts the old vectors back only if they still point to this patch. If another program patched the function since, the vector
     cannot be taken out of the chain: the patch then stays resident, passing every call on, and REMOVE can be tried again later.
@@ -125,30 +127,6 @@ static APTR Vector(
     return *(APTR *)((UBYTE *)SysBase + offset + 2);          /* jmp abs.l: the address follows the opcode */
 }
 
-/* Is the block in memory that the DMA of the Pi reaches? Everything that belongs to the bus of the Amiga is out: the Chip RAM and what
-   lies below 2 MB, then from 10 MB (0xA00000) to the end of the 24 bit space (PCMCIA, CIAs, slow RAM, the chipset, the clock, autoconfig,
-   the ROM), and the table of the vectors of the 68k, wherever the VBR puts it. Those addresses are not the RAM of the Pi: for the DMA they
-   are the memory of Emu68 and of the firmware. What is left must be known to Exec as fast memory, at both ends of the block (the memory
-   of the RTG board is not known to Exec: it is left to the CPU). */
-#define MIN_DMA_ADDRESS     0x00200000UL
-#define NATIVE_LO           0x00A00000UL
-#define NATIVE_HI           0x00FFFFFFUL
-#define VECTORS_SIZE        0x00000400UL        /* 256 vectors */
-
-static ULONG VectorBase;                        /* the VBR, read once when the patch is installed */
-
-/* Run by Supervisor(): MOVEC is not for the user mode (it reboots the machine under Emu68) */
-extern ULONG ReadVBR(void);
-
-__asm__(
-    "       .text\n"
-    "       .even\n"
-    "       .globl  _ReadVBR\n"
-    "_ReadVBR:\n"
-    "       movec   vbr,d0\n"
-    "       rte\n"
-);
-
 static void CopyName(
     char *to,
     const char *from)
@@ -160,34 +138,6 @@ static void CopyName(
     for (i = 0; i < 31 && from[i] != 0; i++)
         to[i] = from[i];
     to[i] = 0;
-}
-
-static BOOL Reachable(
-    ULONG first,
-    ULONG size)
-{
-    ULONG last = first + size - 1, type, i, ends[2];
-
-    if (first < MIN_DMA_ADDRESS || last < first)
-        return FALSE;
-
-    if (first <= NATIVE_HI && last >= NATIVE_LO)
-        return FALSE;
-
-    if (first < VectorBase + VECTORS_SIZE && last >= VectorBase)
-        return FALSE;
-
-    ends[0] = first;
-    ends[1] = last;
-    for (i = 0; i < 2; i++)
-    {
-        type = TypeOfMem((APTR)ends[i]);
-        /* MEMF_KICK is not a reason: every region of the RAM of the Pi has it. MEMF_24BITDMA is memory of the 24 bit space of the Amiga. */
-        if (!(type & MEMF_FAST) || (type & (MEMF_CHIP | MEMF_24BITDMA)))
-            return FALSE;
-    }
-
-    return TRUE;
 }
 
 /* The decision and the job, in C. TRUE: the copy is done. FALSE: the stub gives the copy to the routine that was there before; this
@@ -209,12 +159,6 @@ ULONG __attribute__((used)) TryCopy(
     if (SysBase->IDNestCnt >= 0 || SysBase->TDNestCnt >= 0 ||
         (ULONG)&here < (ULONG)task->tc_SPLower + STACK_MARGIN || (ULONG)&here >= (ULONG)task->tc_SPUpper ||
         (s < d + size && d < s + size))
-    {
-        S.skipped++;
-        return FALSE;
-    }
-
-    if (!Reachable(s, size) || !Reachable(d, size))
     {
         S.skipped++;
         return FALSE;
@@ -341,7 +285,6 @@ static LONG Install(void)
     S.request = REQ_NONE;
     S.stuck = 0;
     S.threshold = LaunchThreshold;
-    VectorBase = Supervisor((ULONG (*)())ReadVBR);
     CopyThreshold = LaunchThreshold;
 
     Forbid();

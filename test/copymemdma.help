@@ -53,13 +53,12 @@
 
 	A copy goes to the DMA only if all of this is true: its size reaches the
 	THRESHOLD; the caller is a task that may sleep (no Forbid(), no
-	Disable(), not an interrupt); the two blocks do not overlap; both lie in
-	fast memory (not MEMF_CHIP, not MEMF_24BITDMA), outside the bus of the
-	Amiga (below 2 MB: the Chip RAM; from 10 MB to 16 MB: PCMCIA, CIAs,
-	chipset, clock, ROM) and outside the table
-	of the 68k vectors (VBR, read when the patch is installed): those
-	addresses are not in the RAM of the Pi, the DMA cannot reach them; enough
-	stack is left for the calls into the resource. In every other case, and
+	Disable(), not an interrupt); the two blocks do not overlap; enough
+	stack is left for the calls into the resource. The memory is checked
+	by brcm-dma.resource, which refuses the addresses that the DMA of the Pi
+	does not reach (the Chip RAM, the bus of the Amiga, the table of the 68k
+	vectors): such a copy is done by the old routine. This command has no list
+	of its own and needs a resource that does that. In every other case, and
 	when the resource refuses a job or does not finish it, the copy is done
 	by the routine that was there before: a copy is never lost, and the
 	resource may be unavailable at any time.
