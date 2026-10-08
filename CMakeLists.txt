@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.14.0)
 project(brcm-dma VERSION 0.1.0)
 
+# "make install" gathers the products in build/install/ (CMake itself works in build/cmake/) (kernel/ the module and its blob for the ROM of Emu68, sdk/ what a developer needs,
+# tools/ the programs for the Amiga) unless another prefix is given
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/build/install CACHE PATH "Install prefix" FORCE)
+endif()
+
 # The dependencies are submodules, and are used as such. devicetree.resource and mailbox.resource are projects of their own: their SFD generates the stubs
 # (proto/devicetree.h, proto/mailbox.h) in their own build directory and the CMake targets devicetree and mailbox carry the include directory. They are
 # not built for themselves (EXCLUDE_FROM_ALL: they go to the ROM of Emu68 on their own). mailbox.resource has a devicetree.resource of its own as a submodule:
@@ -142,7 +148,15 @@ add_custom_target(brcm-dma_resources_header ALL
 )
 
 # no install for devicetree.resource itself, it goes to ROM
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/sfd DESTINATION Developer)
-install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include DESTINATION Developer)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/resources DESTINATION Developer/include)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Autodocs DESTINATION Developer)
+# the files themselves, not install(TARGETS): the executables are linked by a linker script, there is no relink step to run
+install(PROGRAMS $<TARGET_FILE:brcm-dma.resource> DESTINATION kernel)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/brcm-dma.resource.h DESTINATION kernel)
+
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/ DESTINATION sdk/include)
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/FD/ DESTINATION sdk/FD)
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/SFD/ DESTINATION sdk/SFD)
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Autodocs/ DESTINATION sdk/Autodocs)
+
+foreach(tool brcm-dma-test brcm-dma-stress brcm-dma-cost brcm-dma-lab brcm-dma-stack brcm-dma-info)
+    install(PROGRAMS $<TARGET_FILE:${tool}> DESTINATION tools)
+endforeach()
