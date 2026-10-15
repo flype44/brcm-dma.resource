@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     brcm-dma-scroll -- ScrollRaster() on a screen of a given size and depth, and the number of operations a second: a test of the scrolls to the side
     (the case that went through the CPU) and of the scrolls up and down, at 8, 16, 24 and 32 bits.
 

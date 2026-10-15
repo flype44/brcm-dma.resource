@@ -182,14 +182,46 @@ static BOOL BDMA_PiOwns(
     return TRUE;
 }
 
-/* Is (address, address + bytes) memory that a transfer may touch: the RTG memory (/emu68 vc4-mem), or known to exec as memory of the Pi?
+/* The range of the client that holds all of [first, last], or NULL. The caller has the semaphore of the base: the lists change under it. */
+static struct BDMARange *FindRange(
+    struct BDMAClient *client,
+    ULONG first,
+    ULONG last)
+{
+    struct MinNode *node;
+
+    if (client == NULL)
+    {
+        return NULL;
+    }
+
+    for (node = client->bcl_Ranges.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ)
+    {
+        struct BDMARange *range = (struct BDMARange *)node;
+
+        if (first >= range->brg_Lo && last < range->brg_Hi)
+        {
+            return range;
+        }
+    }
+
+    return NULL;
+}
+
+/* Is (address, address + bytes) memory that a job of the client may touch: the RTG memory (/emu68 vc4-mem), known to exec as memory of
+   the Pi, or inside a range that the client declared (and that allows the direction)?
 */
 BOOL BDMA_InMemory(
-    struct BDMABase *BDMABase, 
-    ULONG address, 
-    ULONG bytes)
+    struct BDMABase *BDMABase,
+    struct BDMAClient *client,
+    ULONG address,
+    ULONG bytes,
+    BOOL write)
 {
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     ULONG last = address + bytes - 1;
+    struct BDMARange *range;
+    BOOL ok;
 
     if (bytes == 0 || last < address)
     {
@@ -201,7 +233,88 @@ BOOL BDMA_InMemory(
         return TRUE;
     }
 
-    return BDMA_PiOwns(BDMABase, address, last);
+    if (BDMA_PiOwns(BDMABase, address, last))
+    {
+        return TRUE;
+    }
+
+    ObtainSemaphore(&BDMABase->bdb_Lock);
+    range = FindRange(client, address, last);
+    ok = range != NULL && !(range->brg_Flags & (write ? BRF_READONLY : BRF_WRITEONLY));
+    ReleaseSemaphore(&BDMABase->bdb_Lock);
+
+    return ok;
+}
+
+/* The CPU does not cache the whole of [lo, hi): the RTG memory, or a range of the client that is not BDR_Cached. The jobs ask once, when they
+   are checked, and keep the answer (bj_ReadUncached, bj_WriteUncached): the end of a job, in an interrupt, does not walk the lists.
+*/
+BOOL BDMA_IsUncached(
+    struct BDMABase *BDMABase,
+    struct BDMAClient *client,
+    ULONG lo,
+    ULONG hi)
+{
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    struct BDMARange *range;
+    BOOL uncached;
+
+    if (BDMA_InVideoMemory(BDMABase, lo, hi))
+    {
+        return TRUE;
+    }
+
+    if (hi <= lo)
+    {
+        return FALSE;
+    }
+
+    ObtainSemaphore(&BDMABase->bdb_Lock);
+    range = FindRange(client, lo, hi - 1);
+    uncached = range != NULL && !(range->brg_Flags & BRF_CACHED);
+    ReleaseSemaphore(&BDMABase->bdb_Lock);
+
+    return uncached;
+}
+
+/* Does a job of the client that is in flight (queued, running, or over with its reply not taken yet) overlap the range? */
+BOOL BDMA_RangeInUse(
+    struct BDMAClient *client,
+    const struct BDMARange *range)
+{
+    struct MinNode *node;
+
+    for (node = client->bcl_Jobs.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ)
+    {
+        struct BDMAJob *job = (struct BDMAJob *)((UBYTE *)node - __builtin_offsetof(struct BDMAJob, bj_Link));
+
+        if (job->bj_State < BJS_DONE || job->bj_Msg.mn_Node.ln_Type == NT_MESSAGE)
+        {
+            if ((job->bj_ReadLo < range->brg_Hi && range->brg_Lo < job->bj_ReadHi) ||
+                (job->bj_WriteLo < range->brg_Hi && range->brg_Lo < job->bj_WriteHi))
+            {
+                return TRUE;
+            }
+        }
+    }
+
+    return FALSE;
+}
+
+/* The client is closing: its ranges go. */
+VOID BDMA_FreeRanges(
+    struct BDMABase *BDMABase,
+    struct BDMAClient *client)
+{
+    struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    struct MinNode *node;
+
+    ObtainSemaphore(&BDMABase->bdb_Lock);
+    while ((node = (struct MinNode *)RemHead((struct List *)&client->bcl_Ranges)) != NULL)
+    {
+        FreeVec(node);
+    }
+    ReleaseSemaphore(&BDMABase->bdb_Lock);
 }
 
 /* Is (lo, hi) all in the memory of the RTG board?
@@ -374,7 +487,7 @@ BOOL BDMA_WouldWait(
    First choice: the job that has none on a channel, the best priority and then the order of submission. Only when no such job
    can start, a job that is already running and can be split gets a second slice on the idle channel (the opportunistic use of
    the second channel: nothing else waits for it).
-   Called with the interrupts off (Disable(), or from the interrupt). The channel is taken; the caller then calls
+   Called with the interrupts off (BDMA_Lock(), or from the interrupt). The channel is taken; the caller then calls
    BDMA_StartOnChannel() with the interrupts on if it can.
 */
 static struct BDMAChannel *Pick(
@@ -544,10 +657,11 @@ VOID BDMA_StartOnChannel(
     struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    ULONG ipl;
 
     BDMABase->bdb_Backend->Build(BDMABase, channel, job);
 
-    Disable();
+    ipl = BDMA_Lock();
     channel->bc_Starting = 0;
 
     if (job->bj_Stop != 0)
@@ -557,7 +671,7 @@ VOID BDMA_StartOnChannel(
         channel->bc_Job = NULL;
         job->bj_Active--;
         settled = BDMA_KillJob(BDMABase, job, job->bj_Stop);
-        Enable();
+        BDMA_Unlock(ipl);
 
         if (settled)
         {
@@ -577,7 +691,7 @@ VOID BDMA_StartOnChannel(
         job->bj_InQueue = 0;
     }
 
-    Enable();
+    BDMA_Unlock(ipl);
 }
 
 /* Starts what can start on the idle channels.
@@ -592,10 +706,11 @@ void BDMA_Run(
     {
         struct BDMAChannel *channel;
         struct BDMAJob *job = NULL;
+        ULONG ipl;
 
-        Disable();
+        ipl = BDMA_Lock();
         channel = Pick(BDMABase, &job);
-        Enable();
+        BDMA_Unlock(ipl);
 
         if (channel == NULL)
         {
@@ -624,8 +739,9 @@ static ULONG Tick(
     {
         struct BDMAChannel *channel = &BDMABase->bdb_Channel[i];
         struct BDMAJob *job;
+        ULONG ipl;
 
-        Disable();
+        ipl = BDMA_Lock();
         job = channel->bc_Job;
 
         if (job != NULL && !channel->bc_Starting && !job->bj_Test && job->bj_Request.bdr_Timeout != 0 &&
@@ -633,7 +749,7 @@ static ULONG Tick(
         {
             BOOL settled = BDMA_KillJob(BDMABase, job, BDERR_TIMEOUT);
 
-            Enable();
+            BDMA_Unlock(ipl);
 
             if (settled)
             {
@@ -644,7 +760,7 @@ static ULONG Tick(
         }
         else
         {
-            Enable();
+            BDMA_Unlock(ipl);
         }
     }
 
@@ -690,7 +806,7 @@ static VOID Finish(
         }
 
         job->bj_Done = error == BDERR_OK ? r->bdr_Length * r->bdr_Rows : 0;
-        cached = error == BDERR_OK && !(r->bdr_Given & BDRF_NOCACHE) && !BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi);
+        cached = error == BDERR_OK && !(r->bdr_Given & BDRF_NOCACHE) && !job->bj_WriteUncached;
 
         if (cached && job->bj_WriteHi - job->bj_WriteLo > BDMA_INTERRUPT_MAX)
         {
@@ -752,10 +868,11 @@ VOID BDMA_ChannelEnded(
         {
             /* the other slice of the job, if any, is stopped with it */
             BOOL settled;
+            ULONG ipl;
 
-            Disable();
+            ipl = BDMA_Lock();
             settled = BDMA_KillJob(BDMABase, job, error);
-            Enable();
+            BDMA_Unlock(ipl);
 
             if (settled)
             {

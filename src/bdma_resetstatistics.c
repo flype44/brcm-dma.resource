@@ -24,9 +24,9 @@ VOID L_BDMA_ResetStatistics(
     REGARG(struct BDMABase *BDMABase, "a6"))
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
-    ULONG i;
+    ULONG i, ipl;
 
-    Disable();
+    ipl = BDMA_Lock();
 
     BDMABase->bdb_Jobs = 0;
     BDMABase->bdb_MegaBytes = 0;
@@ -56,5 +56,5 @@ VOID L_BDMA_ResetStatistics(
         BDMABase->bdb_Channel[i].bc_BusyMs = 0;
     }
 
-    Enable();
+    BDMA_Unlock(ipl);
 }

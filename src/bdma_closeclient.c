@@ -77,8 +77,19 @@ VOID L_BDMA_CloseClient(
 
     while ((node = (struct MinNode *)RemHead((struct List *)&client->bcl_Jobs)) != NULL)
     {
-        FreeVec(BDMA_LINKJOB(node));
+        struct BDMAJob *job = BDMA_LINKJOB(node);
+
+        /* nobody holds a detached job: its reply may wait on a port that the client made, or was given */
+        if (job->bj_Detached)
+        {
+            BDMA_TakeReply(BDMABase, job);
+        }
+
+        FreeVec(job);
     }
+
+    /* every job of the client is over and freed: nothing uses its ranges any more */
+    BDMA_FreeRanges(BDMABase, client);
 
     ObtainSemaphore(&BDMABase->bdb_Lock);
     Remove(&client->bcl_Node);

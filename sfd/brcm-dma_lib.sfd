@@ -34,4 +34,11 @@ LONG BDMA_SetJobTagList(struct BDMAJob *job, CONST struct TagItem *tagList) (A0,
 LONG BDMA_SetJobTags(struct BDMAJob *job, ULONG tag1Type, ...) (A0,A1)
 VOID BDMA_StartJob(struct BDMAJob *job) (A0)
 LONG BDMA_WaitJob(struct BDMAJob *job) (A0)
+* revision 2: appended after the vectors of revision 1, which keep their offsets
+struct BDMARange *BDMA_AddRangeTagList(struct BDMAClient *client, ULONG address, ULONG size, CONST struct TagItem *tagList) (A0,D0,D1,A1)
+==varargs
+struct BDMARange *BDMA_AddRangeTags(struct BDMAClient *client, ULONG address, ULONG size, ULONG tag1Type, ...) (A0,D0,D1,A1)
+LONG BDMA_RemRange(struct BDMARange *range) (A0)
+* revision 3
+LONG BDMA_WaitClient(struct BDMAClient *client) (A0)
 ==end

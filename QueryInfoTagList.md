@@ -77,6 +77,7 @@ A useful use is to start `brcm-dma-info WATCH 2` in a shell and work on the desk
 | `BDI_Classes` | `BDCLASS_*` of the channels managed |
 | `BDI_MaxRows` | a limit, not a measure: the most rows a rectangle job may have (65535) |
 | `BDI_VideoBase`, `BDI_VideoSize` | the memory of the RTG board (not cached by the CPU; 0 if none) |
+| `BDI_RangeLo`, `BDI_RangeHi` | the window in which `BDMA_AddRangeTagList()` takes a range (the part of the first gigabyte that the device tree leaves out of `/memory`; 0 if none) |
 
 ## The statistics
 

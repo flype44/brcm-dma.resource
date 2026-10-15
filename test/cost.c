@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     brcm-dma-cost -- where the fixed cost of a small job goes. Every phase is repeated N times (default 300) and printed as min / average / max
     in microseconds (the system timer, 1 us). Refused jobs stop at known points of BDMA_AddJobTagList(Client, ), so subtracting two phases gives the
     cost of the step between them:
@@ -35,6 +44,17 @@ struct DosLibrary * DOSBase;
 struct ExecBase * SysBase;
 APTR BrcmDmaBase;
 struct BDMAClient *Client;
+
+/* run by Supervisor(): nothing but the return */
+extern ULONG CostSuperNop(void);
+
+__asm__(
+    "       .text\n"
+    "       .even\n"
+    "       .globl  _CostSuperNop\n"
+    "_CostSuperNop:\n"
+    "       rte\n"
+);
 
 struct Acc {
     ULONG n, min, max, sum;
@@ -159,10 +179,59 @@ static void LineTest(UBYTE *buf0, ULONG n)
     Printf("  %ld jobs with only cpushl / cinvl: %ld wrong, %ld guard words touched\n",(LONG)runs, (LONG)bad, (LONG)wrong_guard);
 }
 
+/* MASK: does the way of keeping the interrupts out really keep out the interrupt of the DMA? A job of SIZE bytes is on its channel; the
+   interrupts are masked for twice its length; if the end of the job is seen inside the masked region the interrupt came through, if it is
+   seen only after, the mask held. Disable() writes INTENA of the chipset, SetSR() the mask of the SR of the CPU. */
+static void MaskTest(UBYTE *s, UBYTE *d, ULONG size)
+{
+    static const char *names[] = { "Disable() / Enable()", "SetSR mask 7" };
+    ULONG m;
+
+    for (m = 0; m < 2; m++)
+    {
+        struct BDMAJob *job;
+        ULONG t0, t1, old = 0, inside, after;
+
+        job = BDMA_AddJobTags(Client, BDJ_Src, (ULONG)s, BDJ_Dst, (ULONG)d, BDJ_Length, size, BDJ_NoCache, TRUE, TAG_DONE);
+        if (job == NULL)
+        {
+            Printf("  no job\n");
+            return;
+        }
+
+        if (m == 0)
+            Disable();
+        else
+            old = SetSR(0x0700, 0x0700);
+
+        t0 = timer_now();
+        while (timer_now() - t0 < 2000)
+            ;
+        inside = BDMA_CheckJob(job);
+
+        if (m == 0)
+            Enable();
+        else
+            SetSR(old & 0x0700, 0x0700);
+
+        t1 = timer_now();
+        while (!BDMA_CheckJob(job) && timer_now() - t1 < 100000UL)
+            ;
+        after = BDMA_CheckJob(job);
+        BDMA_WaitJob(job);
+
+        Printf("  %-22s end of the job seen inside the masked region: %s; over after the unmask: %s\n",
+            (LONG)names[m],
+            (LONG)(inside ? "YES (the interrupt came through)" : "no (the mask held)"),
+            (LONG)(after ? "yes" : "NO (lost)"));
+    }
+}
+
 int main(int argc, struct WBStartup *wbmsg)
 {
     struct RDArgs *rda;
-    LONG args[2] = { 0, 0 };
+    LONG args[3] = { 0, 0, 0 };
+    BOOL mask = FALSE;
     ULONG n = 300, size = 64, i, t0, t1, t2, t3, available = 0;
     UBYTE *buf, *buf2, *s, *d;
     struct Acc A, B, C, Dadd, Dwait, Dtot, Eadd, Ewait, Etot, Fadd, Fspin, Fwait, Ftot;
@@ -176,13 +245,14 @@ int main(int argc, struct WBStartup *wbmsg)
     if (DOSBase == NULL)
         return 20;
 
-    rda = ReadArgs("N/K/N,SIZE/K/N", args, NULL);
+    rda = ReadArgs("N/K/N,SIZE/K/N,MASK/S", args, NULL);
     if (rda != NULL)
     {
         if (args[0])
             n = *(ULONG *)args[0];
         if (args[1] && *(ULONG *)args[1] != 0)
             size = *(ULONG *)args[1];
+        mask = args[2] != 0;
         FreeArgs(rda);
     }
 
@@ -230,6 +300,17 @@ int main(int argc, struct WBStartup *wbmsg)
         d = buf + 4096;
     }
     Printf("jobs of %ld bytes\n", (LONG)size);
+
+    if (mask)
+    {
+        if (size < 524288UL)
+            Printf("MASK needs a SIZE of 524288 or more (the job must last longer than the masked region)\n");
+        else
+            MaskTest(s, d, size);
+        BDMA_CloseClient(Client);
+        CloseLibrary((struct Library *)DOSBase);
+        return 0;
+    }
 
     AccInit(&A); AccInit(&B); AccInit(&C);
     AccInit(&Dadd); AccInit(&Dwait); AccInit(&Dtot);
@@ -336,11 +417,11 @@ int main(int argc, struct WBStartup *wbmsg)
 
     /* the building blocks, one call at a time */
     {
-        struct Acc G1, G2, H0, H1, I0, J, K, L, M, Z0, Z1, Z2, Z3;
+        struct Acc G1, G2, H0, H1, I0, J, K, L, M, Z0, Z1, Z2, Z3, S1, S2;
         ULONG l;
         BYTE bit = AllocSignal(-1);
 
-        AccInit(&G1); AccInit(&G2); AccInit(&H0); AccInit(&H1); AccInit(&I0); AccInit(&J); AccInit(&K); AccInit(&L); AccInit(&M); AccInit(&Z0); AccInit(&Z1); AccInit(&Z2); AccInit(&Z3);
+        AccInit(&G1); AccInit(&G2); AccInit(&H0); AccInit(&H1); AccInit(&I0); AccInit(&J); AccInit(&K); AccInit(&L); AccInit(&M); AccInit(&Z0); AccInit(&Z1); AccInit(&Z2); AccInit(&Z3); AccInit(&S1); AccInit(&S2);
         for (i = 0; i < n; i++)
         {
             APTR p;
@@ -352,6 +433,9 @@ int main(int argc, struct WBStartup *wbmsg)
             l = 64; t0 = timer_now(); CachePostDMA(buf + 4096, &l, 0); AccAdd(&I0, timer_now() - t0);
             t0 = timer_now(); { BYTE b = AllocSignal(-1); if (b >= 0) FreeSignal(b); } AccAdd(&J, timer_now() - t0);
             t0 = timer_now(); Disable(); Enable(); AccAdd(&K, timer_now() - t0);
+            /* the other ways to keep the interrupts out: the trap of Supervisor() alone, and the mask of the SR (what Disable() does in the chipset) */
+            t0 = timer_now(); Supervisor((ULONG (*)())CostSuperNop); AccAdd(&S1, timer_now() - t0);
+            t0 = timer_now(); { ULONG old = SetSR(0x0700, 0x0700); SetSR(old & 0x0700, 0x0700); } AccAdd(&S2, timer_now() - t0);
             if (bit >= 0) { t0 = timer_now(); Signal(FindTask(NULL), 1UL << bit); AccAdd(&L, timer_now() - t0); SetSignal(0, 1UL << bit); }
             t0 = timer_now(); p = AllocVec(64, MEMF_PUBLIC | MEMF_CLEAR); FreeVec(p); AccAdd(&M, timer_now() - t0);
             /* the same calls at the size of the jobs */
@@ -370,6 +454,8 @@ int main(int argc, struct WBStartup *wbmsg)
         Print("CachePostDMA 64", &I0);
         Print("AllocSignal + FreeSignal", &J);
         Print("Disable + Enable", &K);
+        Print("Supervisor() empty", &S1);
+        Print("SetSR mask 7 + restore", &S2);
         Print("Signal() to self", &L);
         Print("AllocVec + FreeVec 64", &M);
         Print("CacheClearE SIZE", &Z0);

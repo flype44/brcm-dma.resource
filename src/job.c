@@ -1,5 +1,5 @@
 /*
-    Copyright @ 2025 Michal Schulz <michal.schulz@gmx.de>
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
     https://github.com/michalsc
 
     This Source Code Form is subject to the terms of the
@@ -44,10 +44,16 @@ LONG BDMA_CheckRequest(
     job->bj_WriteLo = r->bdr_Dst;
     job->bj_WriteHi = r->bdr_Dst + dstbytes;
 
-    if (!BDMA_InMemory(BDMABase, r->bdr_Dst, dstbytes))
+    if (!BDMA_InMemory(BDMABase, job->bj_Client, r->bdr_Dst, dstbytes, TRUE))
     {
+        job->bj_Request.bdr_BadAddress = r->bdr_Dst;
+
         return BDERR_RANGE;
     }
+
+    job->bj_WriteUncached = BDMA_IsUncached(BDMABase, job->bj_Client, job->bj_WriteLo, job->bj_WriteHi);
+    job->bj_ReadUncached = 0;
+    job->bj_Stale = 0;
 
     if (!fill)
     {
@@ -55,10 +61,14 @@ LONG BDMA_CheckRequest(
         job->bj_ReadLo = r->bdr_Src;
         job->bj_ReadHi = r->bdr_Src + srcbytes;
 
-        if (!BDMA_InMemory(BDMABase, r->bdr_Src, srcbytes))
+        if (!BDMA_InMemory(BDMABase, job->bj_Client, r->bdr_Src, srcbytes, FALSE))
         {
+            job->bj_Request.bdr_BadAddress = r->bdr_Src;
+
             return BDERR_RANGE;
         }
+
+        job->bj_ReadUncached = BDMA_IsUncached(BDMABase, job->bj_Client, job->bj_ReadLo, job->bj_ReadHi);
 
         if (r->bdr_Given & BDRF_MOVE)
         {
@@ -117,15 +127,16 @@ void BDMA_AbortInternal(
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     BOOL settled = FALSE;
+    ULONG ipl;
 
-    Disable();
+    ipl = BDMA_Lock();
 
     if (job->bj_State == BJS_QUEUED || job->bj_State == BJS_RUNNING)
     {
         settled = BDMA_KillJob(BDMABase, job, BDERR_ABORTED);
     }
 
-    Enable();
+    BDMA_Unlock(ipl);
 
     if (settled)
     {
@@ -151,10 +162,11 @@ ULONG BDMA_DoneCode(
     {
         struct BDMAJob *job;
         struct Node *node;
+        ULONG ipl;
 
-        Disable();
+        ipl = BDMA_Lock();
         node = (struct Node *)RemHead((struct List *)&BDMABase->bdb_Done);
-        Enable();
+        BDMA_Unlock(ipl);
 
         if (node == NULL)
             break;
@@ -163,7 +175,7 @@ ULONG BDMA_DoneCode(
 
         if (job->bj_State == BJS_DONE && 
             !(job->bj_Request.bdr_Given & BDRF_NOCACHE) && 
-            !BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi))
+            !job->bj_WriteUncached)
         {
             ULONG bytes = job->bj_WriteHi - job->bj_WriteLo;
 

@@ -24,6 +24,7 @@ LONG BDMA_ParseTags(
     struct TagItem *t;
     const struct TagItem *list = tags;
     ULONG *error_code = NULL;
+    ULONG *error_address = NULL;
 
     if (!keep)
     {
@@ -42,6 +43,8 @@ LONG BDMA_ParseTags(
         r->bdr_Timeout   = BDMA_DEFAULT_TIMEOUT;
     }
     r->bdr_ErrorCode = NULL;
+    r->bdr_ErrorAddress = NULL;
+    r->bdr_BadAddress = 0;
     r->bdr_Unknown = 0;
 
     while ((t = NextTagItem((struct TagItem **)&list)) != NULL)
@@ -65,11 +68,14 @@ LONG BDMA_ParseTags(
             case BDJ_Classes:       r->bdr_Classes = t->ti_Data;     r->bdr_Given |= BDRF_CLASSES; break;
             case BDJ_Timeout:       r->bdr_Timeout = (t->ti_Data == 0 || t->ti_Data > BDMA_MAX_TIMEOUT) ? BDMA_MAX_TIMEOUT : t->ti_Data; break;
             case BDJ_ErrorCode:     error_code = (ULONG *)t->ti_Data; break;
+            case BDJ_ErrorAddress:  error_address = (ULONG *)t->ti_Data; break;
+            case BDJ_Detached:      if (t->ti_Data) r->bdr_Given |= BDRF_DETACHED; break;
             default:                r->bdr_Unknown++; break;
         }
     }
 
     r->bdr_ErrorCode = error_code;
+    r->bdr_ErrorAddress = error_address;
 
     if (!(r->bdr_Given & BDRF_DST) || !(r->bdr_Given & BDRF_LENGTH))
     {
@@ -195,6 +201,8 @@ ULONG BDMA_FillQuery(
             case BDI_IrqCalls:  value = s->bds_IrqCalls; break;
             case BDI_IrqMCycles: value = s->bds_IrqMCycles; break;
             case BDI_IrqKInstr: value = s->bds_IrqKInstr; break;
+            case BDI_RangeLo:   value = s->bds_RangeLo; break;
+            case BDI_RangeHi:   value = s->bds_RangeHi; break;
             default: continue;
         }
 

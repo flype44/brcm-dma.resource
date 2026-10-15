@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     Host test of the TagList code of the resource (src/tags.c, compiled unchanged, with a stand-in of NextTagItem()). The cases of the
     parser are the same as in the Amiga tool. Build and run: test/host/run.sh
 */

@@ -54,7 +54,10 @@ add_executable(brcm-dma.resource
     src/bdma_freejob.c
     src/bdma_queryjobtaglist.c
     src/bdma_addjobtaglist.c
+    src/bdma_addrangetaglist.c
+    src/bdma_remrange.c
     src/bdma_waitjob.c
+    src/bdma_waitclient.c
     src/bdma_checkjob.c
     src/bdma_abortjob.c
     src/bdma_resetstatistics.c

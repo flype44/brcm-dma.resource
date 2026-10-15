@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     brcm-dma-test -- the test tool of brcm-dma.resource.
 
     Self checking. Without argument it runs everything; "brcm-dma-test STEP n" runs only the step n (a step that freezes the machine is then
@@ -1351,6 +1360,93 @@ __asm__(
 
 /* THE GUARD of the resource, on request only (STEP 17): with a resource that has no guard, these jobs are accepted and the DMA writes in the
    Chip RAM or on the bus of the Amiga, which freezes the machine. Not in the default run. */
+/* Detached jobs and BDMA_WaitClient(); the address that BDERR_RANGE reports; the window of the ranges */
+static void StepWaitClient(void)
+{
+    struct BDMAClient *c = BDMA_OpenClientTags(BDC_Name, (ULONG)"waitclient", TAG_DONE);
+    ULONG error = 0xdeadbeef, bad = 0xdeadbeef, lo = 0xdead, hi = 0xdead, i, mem0, mem1;
+    struct BDMAJob *job;
+
+    Check("waitclient: client opened", c != NULL, TRUE);
+    if (c == NULL)
+        return;
+
+    Check("waitclient: nothing to wait for", BDMA_WaitClient(c), BDERR_OK);
+    Check("waitclient: NULL", BDMA_WaitClient(NULL), BDERR_ARGS);
+
+    /* eight detached rectangles of 4 KB: all there after one wait */
+    FillZone(ZONE_A, 0x8000, 41);
+    ClearZone(ZONE_B, 0x8000, 0);
+    for (i = 0; i < 8; i++)
+    {
+        error = 0xdeadbeef;
+        job = BDMA_AddJobTags(c,
+            BDJ_Src, (ULONG)arena + ZONE_A + i * 4096,
+            BDJ_Dst, (ULONG)arena + ZONE_B + i * 4096,
+            BDJ_Length, 4096,
+            BDJ_Detached, TRUE,
+            BDJ_ErrorCode, (ULONG)&error,
+            TAG_DONE);
+        Check("waitclient: a detached job is accepted", job != NULL && error == BDERR_OK, TRUE);
+    }
+    Check("waitclient: eight detached jobs", BDMA_WaitClient(c), BDERR_OK);
+    Check("waitclient: the data of the eight", CheckWords((const ULONG *)(arena + ZONE_B), 0x8000 / 4, 41), 0);
+
+    /* 200 small ones (the client sweeps the ones that are over by itself, 32 at a time): nothing is left behind */
+    mem0 = AvailMem(MEMF_ANY);
+    for (i = 0; i < 200; i++)
+    {
+        BDMA_AddJobTags(c,
+            BDJ_Src, (ULONG)arena + ZONE_A,
+            BDJ_Dst, (ULONG)arena + ZONE_C + (i & 15) * 256,
+            BDJ_Length, 256,
+            BDJ_Detached, TRUE,
+            TAG_DONE);
+    }
+    Check("waitclient: 200 detached jobs", BDMA_WaitClient(c), BDERR_OK);
+    mem1 = AvailMem(MEMF_ANY);
+    Check("waitclient: no job left behind", (mem0 > mem1 ? mem0 - mem1 : mem1 - mem0) < 8192, TRUE);
+
+    /* a job that the client holds is waited for and left alone */
+    ClearZone(ZONE_B, 0x1000, 0);
+    job = BDMA_AddJobTags(c, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, (ULONG)arena + ZONE_B, BDJ_Length, 4096, TAG_DONE);
+    BDMA_AddJobTags(c, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, (ULONG)arena + ZONE_C, BDJ_Length, 4096, BDJ_Detached, TRUE, TAG_DONE);
+    Check("waitclient: a held job and a detached one", BDMA_WaitClient(c), BDERR_OK);
+    Check("waitclient: the held job is over", BDMA_CheckJob(job), TRUE);
+    Check("waitclient: the held job still gives its result", BDMA_WaitJob(job), BDERR_OK);
+    Check("waitclient: and its data", CheckWords((const ULONG *)(arena + ZONE_B), 0x1000 / 4, 41), 0);
+
+    /* the address that BDERR_RANGE reports: the destination first, then the source */
+    error = 0xdeadbeef;
+    bad = 0xdeadbeef;
+    job = BDMA_AddJobTags(c, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, 0xFFFFF000UL, BDJ_Length, 4096, BDJ_ErrorCode, (ULONG)&error, BDJ_ErrorAddress, (ULONG)&bad, TAG_DONE);
+    Check("error address: destination refused", job == NULL && error == BDERR_RANGE, TRUE);
+    Check("error address: the destination", bad, (LONG)0xFFFFF000UL);
+    error = 0xdeadbeef;
+    bad = 0xdeadbeef;
+    job = BDMA_AddJobTags(c, BDJ_Src, 0xFFFFE000UL, BDJ_Dst, (ULONG)arena + ZONE_B, BDJ_Length, 4096, BDJ_ErrorCode, (ULONG)&error, BDJ_ErrorAddress, (ULONG)&bad, TAG_DONE);
+    Check("error address: source refused", job == NULL && error == BDERR_RANGE, TRUE);
+    Check("error address: the source", bad, (LONG)0xFFFFE000UL);
+    error = 0xdeadbeef;
+    bad = 0xdeadbeef;
+    job = BDMA_AddJobTags(c, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, (ULONG)arena + ZONE_B, BDJ_Length, 0, BDJ_ErrorCode, (ULONG)&error, BDJ_ErrorAddress, (ULONG)&bad, TAG_DONE);
+    Check("error address: another error", job == NULL && error == BDERR_ARGS, TRUE);
+    Check("error address: is 0 for it", bad, 0);
+    if (job != NULL)
+        BDMA_WaitJob(job);
+
+    /* the window of the ranges: both ends or none */
+    BDMA_QueryInfoTags(BDI_RangeLo, (ULONG)&lo, BDI_RangeHi, (ULONG)&hi, TAG_DONE);
+    Printf("window of the ranges: $%08lx - $%08lx\n", (LONG)lo, (LONG)hi);
+    Check("window: both ends or none", (lo == 0) == (hi == 0), TRUE);
+    Check("window: ordered", hi == 0 || lo < hi, TRUE);
+
+    /* a client closed with a big detached job in flight */
+    BDMA_AddJobTags(c, BDJ_Src, (ULONG)arena + ZONE_A, BDJ_Dst, (ULONG)arena + ZONE_C, BDJ_Length, 0x10000, BDJ_Detached, TRUE, TAG_DONE);
+    BDMA_CloseClient(c);
+    Check("waitclient: closed with a job in flight", TRUE, TRUE);
+}
+
 static void StepGuard(void)
 {
     /* the bus of the Amiga is not memory of the Pi: a job there is refused, as source and as destination (the Chip RAM, below 2 MB; the
@@ -1483,6 +1579,7 @@ int main(int argc, struct WBStartup *wbmsg)
     if (only < 0 || only == 14) { Printf("step 14: copies that start and end at any byte\n"); StepOdd(); }
     if (only < 0 || only == 15) { Printf("step 15: fills of pixels of 1, 2 and 4 bytes at any address\n"); StepFill(); }
     if (only < 0 || only == 16) { Printf("step 16: the RAM board of Emu68 (Z2), read by the DMA\n"); StepZ2(); }
+    if (only < 0 || only == 18) { Printf("step 18: detached jobs, BDMA_WaitClient(), the address of BDERR_RANGE, the window of the ranges\n"); StepWaitClient(); }
     if (only == 17) { Printf("step 17: the guard of the resource (needs a resource that has it)\n"); StepGuard(); }
 
     Printf("%ld failed\n", (LONG)failed);

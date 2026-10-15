@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     brcm-dma-stack -- the stack that the calls of a hook of VideoCore.card use inside brcm-dma.resource.
 
     The hooks of the card run in the task of whoever draws, with a small stack (about 250 bytes are left to a hook, according to its notes), and the calls of the

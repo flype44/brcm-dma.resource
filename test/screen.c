@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     brcm-dma-screen -- opens a 32 bit RTG screen of the size asked for, makes it the default public screen, and keeps it until it is told to stop.
     The programs that open their windows on the default public screen (vcwin, the benchmarks) then work at that resolution, without a restart.
 

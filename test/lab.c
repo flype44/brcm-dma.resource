@@ -1,4 +1,13 @@
 /*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+/*
     brcm-dma-lab -- the hardware of every DMA channel of the Pi, looked at and measured: read the registers, then copy memory with one channel
     at a time and compare. It drives the registers itself (no brcm-dma.resource job), so it only touches a channel that is in the mask of
     the firmware, is not the firmware's, and is idle. The resource must not use that channel meanwhile (the engine uses 12 and 13 once started).

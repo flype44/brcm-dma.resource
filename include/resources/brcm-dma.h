@@ -1,3 +1,12 @@
+/*
+    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    https://github.com/michalsc
+
+    This Source Code Form is subject to the terms of the
+    Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
 #ifndef RESOURCES_BRCM_DMA_H
 #define RESOURCES_BRCM_DMA_H
 /*
@@ -21,6 +30,9 @@
 
 /* A client of the resource: opaque, made by BDMA_OpenClientTagList(), given back by BDMA_CloseClient() */
 struct BDMAClient;
+
+/* A range of memory that a client declared with BDMA_AddRangeTagList(): opaque, given back to BDMA_RemRange() */
+struct BDMARange;
 
 /* A transfer. It belongs to the client from BDMA_AllocJobTagList() to BDMA_FreeJob(). It is an exec message: the end of the job is a ReplyMsg()
    to its reply port (a PA_SIGNAL port, or a PA_SOFTINT one for an interrupt handler). The rest of the structure is the resource's own. */
@@ -55,6 +67,14 @@ struct BDMAJob;
 #define BDJ_Classes         (BDMA_Dummy + 16)    /* ULONG, BDCLASS_*: the classes of channel the job may run on (default: every class that can do it) */
 #define BDJ_Timeout         (BDMA_Dummy + 17)    /* ULONG, microseconds: the longest a slice of the job (1 MB at most) may stay on a channel; default 1000000, at most 10000000 (0 and larger values give 10000000). Over it the channel is stopped and the job is BDERR_TIMEOUT */
 #define BDJ_FillBytes       (BDMA_Dummy + 18)    /* ULONG, bytes of the pixel that BDJ_FillValue repeats: 1, 2 or 4 (default 4); BDJ_Length is a multiple of it */
+#define BDJ_Detached        (BDMA_Dummy + 19)    /* BOOL, with BDMA_AddJobTagList(): nobody waits for this job. The resource frees it once it is over and BDMA_WaitClient() counts its outcome. What the call gives back only says "accepted": do not use it, do not wait for it */
+#define BDJ_ErrorAddress    (BDMA_Dummy + 20)    /* ULONG *, receives the address of the block that made the job BDERR_RANGE (the destination, else the source), 0 for any other outcome */
+
+/* brcm-dma add range (BDMA_AddRangeTagList). BDJ_ErrorCode and BDJ_Strict apply to it as well. */
+#define BDR_Cached          (BDMA_Dummy + 96)    /* BOOL, the CPU caches this memory: the jobs do the cache maintenance (default: it does not, as for the RTG memory) */
+#define BDR_ReadOnly        (BDMA_Dummy + 97)    /* BOOL, a job may read it and not write it */
+#define BDR_WriteOnly       (BDMA_Dummy + 98)    /* BOOL, a job may write it and not read it */
+#define BDR_Name            (BDMA_Dummy + 99)    /* STRPTR, kept for the tools that list the owners (copied) */
 
 /* brcm-dma client (BDMA_OpenClientTagList) */
 #define BDC_Name            (BDMA_Dummy + 48)    /* STRPTR, kept for the tools that list the owners (copied) */
@@ -130,6 +150,8 @@ struct BDMAJob;
 #define BDI_IrqCalls        (BDMA_Dummy + 59)    /* ULONG *, interrupts of the channels that ended a slice */
 #define BDI_IrqMCycles      (BDMA_Dummy + 60)    /* ULONG *, what they cost the CPU: megacycles (2^20 cycles), from the counters of Emu68 */
 #define BDI_IrqKInstr       (BDMA_Dummy + 61)    /* ULONG *, and 68k instructions in thousands (2^10) */
+#define BDI_RangeLo         (BDMA_Dummy + 62)    /* ULONG *, the window in which BDMA_AddRangeTagList() takes a range: its first byte (0 with BDI_RangeHi: no window on this machine) */
+#define BDI_RangeHi         (BDMA_Dummy + 63)    /* ULONG *, the first byte after it */
 
 /* brcm-dma models */
 #define BDM_UNKNOWN    0

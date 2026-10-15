@@ -1,5 +1,5 @@
 /*
-    Copyright © 2025 Michal Schulz <michal.schulz@gmx.de>
+    Copyright Â© 2025 Michal Schulz <michal.schulz@gmx.de>
     https://github.com/michalsc
 
     This Source Code Form is subject to the terms of the
@@ -45,6 +45,8 @@ ULONG L_BDMA_QueryInfoTagList(
     status.bds_Classes   = available ? BDMABase->bdb_Classes : 0;
     status.bds_VideoBase = BDMABase->bdb_VCBase;
     status.bds_VideoSize = BDMABase->bdb_VCSize;
+    status.bds_RangeLo   = available ? BDMABase->bdb_GpuLo : 0;
+    status.bds_RangeHi   = available ? BDMABase->bdb_GpuHi : 0;
     status.bds_Jobs      = BDMABase->bdb_Jobs;
     status.bds_MegaBytes = BDMABase->bdb_MegaBytes;
     status.bds_Failures  = BDMABase->bdb_Failures;

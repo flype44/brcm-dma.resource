@@ -42,6 +42,7 @@
 
 #define CONSTANT_SIZE       288    /* 256 bytes that a burst reads, and the 3 of the shift of the pattern, to a multiple of 32 */
 #define SELFTEST_SIZE       4096
+#define GPU_WINDOW_END      0x40000000UL    /* the memory of the GPU is in the first gigabyte, below this */
 
 #define GIC_MIN_VERSION     1
 #define GIC_MIN_REVISION    3
@@ -391,7 +392,7 @@ static ULONG SelfTest(
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     struct BDMAJob job;
-    ULONG i, t0;
+    ULONG i, t0, ipl;
     ULONG why = BCW_OK;
 
     for (i = 0; i < SELFTEST_SIZE; i++)
@@ -416,12 +417,12 @@ static ULONG SelfTest(
     job.bj_Request.bdr_SrcPitch = SELFTEST_SIZE;
     job.bj_Request.bdr_DstPitch = SELFTEST_SIZE;
 
-    Disable();
+    ipl = BDMA_Lock();
     channel->bc_Job = &job;
     channel->bc_Starting = 1;
     job.bj_Active = 1;
     job.bj_State = BJS_RUNNING;
-    Enable();
+    BDMA_Unlock(ipl);
 
     BDMA_StartOnChannel(BDMABase, channel, &job);
 
@@ -439,9 +440,9 @@ static ULONG SelfTest(
         channel->bc_TestCopied = scratch[SELFTEST_SIZE] == scratch[0] && scratch[2 * SELFTEST_SIZE - 1] == (UBYTE)((SELFTEST_SIZE - 1) * 7 + 3);
 
         StopChannel(channel);
-        Disable();
+        ipl = BDMA_Lock();
         channel->bc_Job = NULL;
-        Enable();
+        BDMA_Unlock(ipl);
     }
     else
     {
@@ -484,6 +485,50 @@ static BOOL ReadDeviceTree(
 
             BDMABase->bdb_VCBase = cells[0];
             BDMABase->bdb_VCSize = cells[1];
+        }
+
+        DT_CloseKey(key);
+    }
+
+    /* the memory of the GPU: the part of the first gigabyte that /memory leaves out, from the end of the last entry that lies below it. The
+       firmware puts its framebuffers there (and /emu68 vc4-mem). /memory has entries of (2 cells of address, 1 of size) under a root with
+       #address-cells 2 and #size-cells 1; with any other layout there is no window and no range is accepted. */
+    key = DT_OpenKey("/");
+    if (key != NULL)
+    {
+        APTR ac = DT_FindProperty(key, "#address-cells");
+        APTR sc = DT_FindProperty(key, "#size-cells");
+        BOOL layout = ac != NULL && sc != NULL && DT_GetPropLen(ac) >= sizeof(ULONG) && DT_GetPropLen(sc) >= sizeof(ULONG) &&
+                      *(const ULONG *)DT_GetPropValue(ac) == 2 && *(const ULONG *)DT_GetPropValue(sc) == 1;
+
+        DT_CloseKey(key);
+        key = layout ? DT_OpenKey("/memory") : NULL;
+    }
+
+    if (key != NULL)
+    {
+        APTR prop = DT_FindProperty(key, "reg");
+
+        if (prop != NULL)
+        {
+            const ULONG *cells = DT_GetPropValue(prop);
+            ULONG count = DT_GetPropLen(prop) / (3 * sizeof(ULONG)), i, top = 0;
+
+            for (i = 0; i < count; i++)
+            {
+                ULONG lo = cells[3 * i + 1], end = lo + cells[3 * i + 2];
+
+                if (cells[3 * i] == 0 && end > lo && end <= GPU_WINDOW_END && end > top)
+                {
+                    top = end;
+                }
+            }
+
+            if (top != 0 && top < GPU_WINDOW_END)
+            {
+                BDMABase->bdb_GpuLo = top;
+                BDMABase->bdb_GpuHi = GPU_WINDOW_END;
+            }
         }
 
         DT_CloseKey(key);

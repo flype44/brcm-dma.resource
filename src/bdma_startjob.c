@@ -66,6 +66,7 @@ VOID L_BDMA_StartJob(
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
     const struct BDMARequest *r;
     struct MsgPort *port;
+    ULONG ipl;
 
     if (job == NULL || job->bj_State < BJS_DONE)
     {
@@ -87,21 +88,30 @@ VOID L_BDMA_StartJob(
     job->bj_Taken = 0;
     job->bj_Waiter = NULL;
 
+    /* a range that the job was checked against was removed since: the memory may be the firmware's again */
+    if (job->bj_Stale)
+    {
+        job->bj_State = BJS_FAILED;
+        job->bj_Error = BDERR_RANGE;
+        BDMA_ReplyJob(BDMABase, job);
+        return;
+    }
+
     if (!(r->bdr_Given & BDRF_NOCACHE))
     {
-        /* the memory of the RTG board is not cached by the CPU */
-        if (!(r->bdr_Given & BDRF_FILL) && !BDMA_InVideoMemory(BDMABase, job->bj_ReadLo, job->bj_ReadHi))
+        /* the memory of the RTG board, and the ranges that the client says are not cached, are not cached by the CPU */
+        if (!(r->bdr_Given & BDRF_FILL) && !job->bj_ReadUncached)
         {
             CachePre(SysBase, job->bj_ReadLo, job->bj_ReadHi - job->bj_ReadLo, DMA_ReadFromRAM);
         }
 
-        if (!BDMA_InVideoMemory(BDMABase, job->bj_WriteLo, job->bj_WriteHi))
+        if (!job->bj_WriteUncached)
         {
             CachePre(SysBase, job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo, 0);
         }
     }
 
-    Disable();
+    ipl = BDMA_Lock();
 
     /* the caller does not want to wait: no idle channel, or a conflict with a job that runs or is queued */
     if ((r->bdr_Given & BDRF_NOWAIT) && BDMA_WouldWait(BDMABase, job))
@@ -109,7 +119,7 @@ VOID L_BDMA_StartJob(
         BDMABase->bdb_Busy++;
         job->bj_State = BJS_FAILED;
         job->bj_Error = BDERR_BUSY;
-        Enable();
+        BDMA_Unlock(ipl);
         BDMA_ReplyJob(BDMABase, job);
         return;
     }
@@ -119,15 +129,15 @@ VOID L_BDMA_StartJob(
     AddTail((struct List *)&BDMABase->bdb_Queue, BDMA_JOBNODE(job));
     job->bj_InQueue = 1;
     BDMA_ENQUEUED(BDMABase, job);
-    Enable();
+    BDMA_Unlock(ipl);
 
     BDMA_Run(BDMABase);
 
     /* only a job that still waits is dated; the state is read again with the interrupts off, a job that went on a channel costs nothing here */
     if (job->bj_State == BJS_QUEUED)
     {
-        Disable();
+        ipl = BDMA_Lock();
         BDMA_Stamp(job);
-        Enable();
+        BDMA_Unlock(ipl);
     }
 }

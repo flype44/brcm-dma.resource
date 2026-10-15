@@ -57,6 +57,10 @@ APTR Init(REGARG(struct ExecBase *SysBase, "a6"))
         relFuncTable[10] = (ULONG)&L_BDMA_SetJobTagList;
         relFuncTable[11] = (ULONG)&L_BDMA_StartJob;
         relFuncTable[12] = (ULONG)&L_BDMA_WaitJob;
+        /* revision 2: appended, so that the vectors of revision 1 keep their offsets */
+        relFuncTable[13] = (ULONG)&L_BDMA_AddRangeTagList;
+        relFuncTable[14] = (ULONG)&L_BDMA_RemRange;
+        relFuncTable[15] = (ULONG)&L_BDMA_WaitClient;
         relFuncTable[NUMBER_OF_FUNCTIONS] = (ULONG)-1;
 
         BDMABase = (struct BDMABase *)((UBYTE *)base_pointer + BASE_NEG_SIZE);

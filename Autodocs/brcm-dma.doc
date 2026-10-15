@@ -3,6 +3,8 @@ TABLE OF CONTENTS
 brcm-dma.resource/BDMA_AbortJob
 brcm-dma.resource/BDMA_AddJobTagList
 brcm-dma.resource/BDMA_AddJobTags
+brcm-dma.resource/BDMA_AddRangeTagList
+brcm-dma.resource/BDMA_AddRangeTags
 brcm-dma.resource/BDMA_AllocJobTagList
 brcm-dma.resource/BDMA_AllocJobTags
 brcm-dma.resource/BDMA_CheckJob
@@ -14,10 +16,12 @@ brcm-dma.resource/BDMA_QueryInfoTagList
 brcm-dma.resource/BDMA_QueryInfoTags
 brcm-dma.resource/BDMA_QueryJobTagList
 brcm-dma.resource/BDMA_QueryJobTags
+brcm-dma.resource/BDMA_RemRange
 brcm-dma.resource/BDMA_ResetStatistics
 brcm-dma.resource/BDMA_SetJobTagList
 brcm-dma.resource/BDMA_SetJobTags
 brcm-dma.resource/BDMA_StartJob
+brcm-dma.resource/BDMA_WaitClient
 brcm-dma.resource/BDMA_WaitJob
 
 brcm-dma.resource/BDMA_AbortJob                     brcm-dma.resource/BDMA_AbortJob
@@ -68,9 +72,15 @@ brcm-dma.resource/BDMA_AddJobTagList           brcm-dma.resource/BDMA_AddJobTagL
 	BDMA_AllocJobTagList() and BDMA_StartJob() in one call. The job is freed by the BDMA_WaitJob() or the BDMA_AbortJob() that ends it: it is for a job
 	that is used once. A job that BDJ_NoWait refused is replied at once, BDMA_WaitJob() then gives BDERR_BUSY.
 
+	With BDJ_Detached nobody waits for the job and nobody frees it: the resource does, once it is over, and BDMA_WaitClient() sleeps until all of
+	them are done and gives the first error. The job that the call gives back then only means "accepted": do not wait for it, do not abort it, do not
+	use it (it may be freed by any later call of the client). It is the way to start many rectangles without keeping them in an array.
+
    INPUTS
 	client          a client, from BDMA_OpenClientTagList()
-	tagList         the tags of BDMA_AllocJobTagList()
+	tagList         the tags of BDMA_AllocJobTagList(), and
+
+	BDJ_Detached    BOOL, the job is let go as described above
 
    RESULTS
 	job             a job, or NULL: BDJ_ErrorCode says why
@@ -103,6 +113,83 @@ brcm-dma.resource/BDMA_AddJobTags                 brcm-dma.resource/BDMA_AddJobT
 
    SEE ALSO
 	brcm-dma.resource/BDMA_AddJobTagList()
+
+brcm-dma.resource/BDMA_AddRangeTagList       brcm-dma.resource/BDMA_AddRangeTagList
+
+   NAME
+	BDMA_AddRangeTagList -- declare a range of memory for the jobs of a client (V0.1)
+
+   SYNOPSIS
+	range = BDMA_AddRangeTagList( client, address, size, tagList )
+	d0                            a0      d0       d1    a1
+
+	struct BDMARange *BDMA_AddRangeTagList(struct BDMAClient *, ULONG, ULONG, CONST struct TagItem *);
+
+   FUNCTION
+	A job is accepted only in memory that the resource knows to be safe for the DMA: the fast RAM that exec knows, and the RTG memory
+	(/emu68 vc4-mem). This call opens one more place for the jobs of ONE client: memory of the GPU that the client owns, for instance the
+	framebuffer that the firmware gave it (mailbox ALLOCATE_BUFFER, ARM address = bus address & 0x3FFFFFFF). A job of that client may then
+	read and write it, with the same DMA addresses as for the rest of the RAM; the jobs of the other clients still get BDERR_RANGE there.
+
+	The range is checked, and refused with BDERR_RANGE when:
+	 - it is not inside the window of the GPU: the part of the first gigabyte that the device tree leaves out of /memory (it starts at the end
+	   of the last /memory entry below 1 GB and ends at 0x40000000; BDMA_QueryInfoTagList() gives it as BDI_RangeLo and BDI_RangeHi). The RAM of
+	   the ARM is not opened by this call, it is known to exec;
+	 - it meets the RTG memory, or the memory that the resource keeps for its own channels (control blocks, buffer, constant of the fills).
+	It is refused with BDERR_OVERLAP when it meets a range of any client, and with BDERR_ARGS when the address or the size is not a multiple of
+	4096 bytes, the size is 0, the range wraps around, BDR_ReadOnly and BDR_WriteOnly are both given, or BDJ_Strict is given with a tag that this
+	version does not know.
+
+	The caller answers for the memory: the resource cannot know when the firmware takes it back. Remove the range (BDMA_RemRange()) BEFORE the
+	buffer is released, or close the client: closing a client removes its ranges.
+
+   INPUTS
+	client          a client, from BDMA_OpenClientTagList()
+	address         the first byte, a multiple of 4096 (the CPU address, which is the DMA address)
+	size            the bytes, a multiple of 4096
+	tagList         BDR_Cached      (BOOL) the CPU caches this memory: the jobs do the cache maintenance on it (default: not cached, as the
+	                                RTG memory, and as the framebuffer of the firmware)
+	                BDR_ReadOnly    (BOOL) jobs may read the range and not write it
+	                BDR_WriteOnly   (BOOL) jobs may write the range and not read it
+	                BDR_Name        (STRPTR) a name for the tools that list the owners (copied, 31 characters)
+	                BDJ_Strict, BDJ_ErrorCode as for BDMA_AllocJobTagList()
+
+   RESULTS
+	range           a range, or NULL: BDJ_ErrorCode says why (BDERR_UNAVAILABLE when no engine runs on this machine)
+
+   EXAMPLES
+	range = BDMA_AddRangeTags(client, (ULONG)fb.pixels & ~4095, (fb.size + 4095) & ~4095, BDR_Name, (ULONG)"fb1", TAG_DONE);
+	if (range != NULL)
+	{
+	    job = BDMA_AddJobTags(client, BDJ_Src, picture, BDJ_Dst, fb.pixels, BDJ_Length, bytes, TAG_DONE);
+	    ...
+	    BDMA_RemRange(range);
+	}
+
+   NOTES
+	A task context. The jobs that were checked against the range keep a mark: after BDMA_RemRange() they are refused by BDMA_StartJob()
+	(BDERR_RANGE) until BDMA_SetJobTagList() checks them again.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_RemRange(), brcm-dma.resource/BDMA_AllocJobTagList()
+
+brcm-dma.resource/BDMA_AddRangeTags             brcm-dma.resource/BDMA_AddRangeTags
+
+   NAME
+	BDMA_AddRangeTags -- BDMA_AddRangeTagList() with the tags as arguments (V0.1)
+
+   SYNOPSIS
+	range = BDMA_AddRangeTags( client, address, size, tag1Type, ... )
+	d0                         a0      d0       d1    a1
+
+	struct BDMARange *BDMA_AddRangeTags(struct BDMAClient *, ULONG, ULONG, ULONG, ...);
+
+   FUNCTION
+	The same as BDMA_AddRangeTagList(), the tags follow as arguments (pairs of a tag and its value, ended by TAG_DONE). It is not a function of the
+	resource: it is generated inline from the SFD.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AddRangeTagList()
 
 brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagList
 
@@ -147,13 +234,15 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 	                channel is stopped and the job is replied with BDERR_TIMEOUT. A watchdog on the vertical blank checks it: the resolution is a tick (20 ms)
 	BDJ_Strict      BOOL, a tag that this version does not know is BDERR_ARGS instead of being ignored
 	BDJ_ErrorCode   ULONG *, receives BDERR_OK, or the reason why the job could not be made
+	BDJ_ErrorAddress ULONG *, receives, for BDERR_RANGE, the address of the block that was refused (the destination is looked at first, then the
+	                source), and 0 for any other outcome
 
    RESULTS
 	job             a job, or NULL
 
 	BDERR_UNAVAILABLE   no engine, or no channel of the classes allowed
 	BDERR_ARGS          a missing, wrong or incompatible tag, a fill whose BDJ_FillBytes is not 1, 2 or 4 or does not divide BDJ_Length, a pitch smaller than the length
-	BDERR_RANGE         an address that is not memory, or that the DMA of the Pi does not reach: anything that is not fast memory (MEMF_FAST), the Chip RAM and everything below 2 MB, the memory of the 24 bit space (MEMF_24BITDMA) except the RAM board of Emu68 (z2ram), the range from 0xA00000 to 0xFFFFFF (PCMCIA, CIAs, chipset, clock, ROM), the table of the vectors of the 68k (VBR), an expansion board that is not the RAM of Emu68. A transfer there would freeze the machine.
+	BDERR_RANGE         an address that is not memory, or that the DMA of the Pi does not reach: anything that is not fast memory (MEMF_FAST), the Chip RAM and everything below 2 MB, the memory of the 24 bit space (MEMF_24BITDMA) except the RAM board of Emu68 (z2ram), the range from 0xA00000 to 0xFFFFFF (PCMCIA, CIAs, chipset, clock, ROM), the table of the vectors of the 68k (VBR), an expansion board that is not the RAM of Emu68. A transfer there would freeze the machine. The memory of the GPU that the client declared with BDMA_AddRangeTagList() is accepted for its own jobs (and for the direction that the range allows).
 	BDERR_OVERLAP       the source and the destination overlap (without BDJ_Move, or a row of more than 256 KB with it)
 	BDERR_TOOBIG        too many rows, or a row of a gigabyte
 
@@ -343,6 +432,9 @@ brcm-dma.resource/BDMA_QueryInfoTagList             brcm-dma.resource/BDMA_Query
 	                BDI_Classes      BDCLASS_*, the classes of those channels
 	                BDI_VideoBase    the memory of the RTG board, which the CPU does not cache (0 if none)
 	                BDI_VideoSize    its size
+	                BDI_RangeLo      the window in which BDMA_AddRangeTagList() takes a range: its first byte (0 with BDI_RangeHi: none on this machine);
+	                                 inside it the RTG memory and the memory of the channels are still refused
+	                BDI_RangeHi      the first byte after the window
 	                BDI_MaxRows      the limit: the most rows a rectangle job may have
 	                BDI_Jobs         jobs done since the start
 	                BDI_MegaBytes    megabytes moved since the start
@@ -429,6 +521,37 @@ brcm-dma.resource/BDMA_QueryJobTags             brcm-dma.resource/BDMA_QueryJobT
 
    FUNCTION
 	The same as BDMA_QueryJobTagList(); generated inline from the SFD, not a function of the resource.
+
+brcm-dma.resource/BDMA_RemRange                 brcm-dma.resource/BDMA_RemRange
+
+   NAME
+	BDMA_RemRange -- take back a range of memory (V0.1)
+
+   SYNOPSIS
+	error = BDMA_RemRange( range )
+	d0                     a0
+
+	LONG BDMA_RemRange(struct BDMARange *);
+
+   FUNCTION
+	Removes a range that BDMA_AddRangeTagList() declared, and frees it. Do it before the memory goes back to its owner (RELEASE_BUFFER of the
+	firmware, for a framebuffer): from that moment no job of the client is accepted there.
+
+	A job of the client that is in flight on the range (queued, running, or over with its reply not taken) is not interrupted: the call gives
+	BDERR_BUSY and the range stays. Wait for the job (BDMA_WaitJob()) or abort it. The jobs of the client that were checked against the range and
+	are not started are marked: BDMA_StartJob() replies them with BDERR_RANGE, until BDMA_SetJobTagList() checks them again.
+
+   INPUTS
+	range           a range of a client that is still open
+
+   RESULTS
+	error           BDERR_OK, BDERR_BUSY, or BDERR_ARGS for NULL
+
+   NOTES
+	A task context. Call it from the task that starts the jobs of the client: no job may be started on the range during the call.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AddRangeTagList(), brcm-dma.resource/BDMA_CloseClient()
 
 brcm-dma.resource/BDMA_ResetStatistics          brcm-dma.resource/BDMA_ResetStatistics
 
@@ -528,6 +651,49 @@ brcm-dma.resource/BDMA_StartJob                     brcm-dma.resource/BDMA_Start
 
    SEE ALSO
 	brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_AbortJob()
+
+brcm-dma.resource/BDMA_WaitClient                   brcm-dma.resource/BDMA_WaitClient
+
+   NAME
+	BDMA_WaitClient -- sleep until the jobs of a client are over (V0.1)
+
+   SYNOPSIS
+	error = BDMA_WaitClient( client )
+	d0                       a0
+
+	LONG BDMA_WaitClient(struct BDMAClient *);
+
+   FUNCTION
+	Sleeps (the task is asleep, not looping: the 68k is free for the others) until none of the jobs of the client is in flight, then frees the
+	jobs that were started with BDJ_Detached and gives the first error among them since the last call: BDERR_OK, or the reason of the first one
+	that ended with another result (BDERR_ABORTED, BDERR_TIMEOUT, BDERR_HW, BDERR_BUSY, BDERR_RANGE). The error is then forgotten.
+
+	The other jobs of the client (BDMA_AllocJobTagList(), BDMA_AddJobTagList() without BDJ_Detached) are waited for and left alone: their reply,
+	their result and their freeing are still the client's, by BDMA_WaitJob(). A job that was refused when it was made is not a job of the client
+	and is not counted here: BDMA_AddJobTagList() gave NULL and BDJ_ErrorCode its reason.
+
+	A client that starts detached jobs and never calls this function does not pile them up: BDMA_AddJobTagList() frees the ones that are over
+	when 32 of them wait in the list, and BDMA_CloseClient() frees the rest.
+
+   INPUTS
+	client          a client
+
+   RESULTS
+	error           BDERR_OK, or the first error of the detached jobs; BDERR_ARGS for NULL; BDERR_BUSY when the task has no signal left to sleep on
+
+   EXAMPLES
+	for each rectangle that has to be copied:
+	    BDMA_AddJobTags(client, BDJ_Src, s, BDJ_Dst, d, BDJ_Length, w, BDJ_Rows, h, BDJ_SrcPitch, sp, BDJ_DstPitch, dp, BDJ_Detached, TRUE, TAG_DONE);
+	...the CPU does something else...
+	error = BDMA_WaitClient(client);
+	if (error != BDERR_OK)
+	    ... copy the rectangles again with the CPU ...
+
+   NOTES
+	For the task that owns the client (its reply port is that task's): another task that frees the jobs of the client meanwhile is not looked after.
+
+   SEE ALSO
+	brcm-dma.resource/BDMA_AddJobTagList(), brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_CloseClient()
 
 brcm-dma.resource/BDMA_WaitJob                       brcm-dma.resource/BDMA_WaitJob
 

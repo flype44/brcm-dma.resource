@@ -21,7 +21,7 @@
 
 #define BDMA_PRIORITY    117     /* after devicetree.resource (127), gic400.library (126), mailbox.resource (119) and unicam.resource (118) */
 #define BDMA_VERSION     0       /* 0.1 stays the version until a program really uses the resource and confirms that it can be used as the Autodocs say */
-#define BDMA_REVISION    1
+#define BDMA_REVISION    3       /* 2: BDMA_AddRangeTagList() and BDMA_RemRange(); 3: BDMA_WaitClient(), BDJ_Detached, BDJ_ErrorAddress, BDI_RangeLo and BDI_RangeHi (the vectors of revisions 2 and 3 are the last ones of the table) */
 
 /* The most rows of one rectangle */
 #define BDMA_MAX_ROWS    65535
@@ -90,6 +90,7 @@
 #define BDRF_NOWAIT      (1 << 9)
 #define BDRF_STRICT      (1 << 10)
 #define BDRF_CLASSES     (1 << 11)
+#define BDRF_DETACHED    (1 << 12)
 
 /* A job as the tags describe it, once parsed and checked. */
 struct BDMARequest
@@ -106,6 +107,8 @@ struct BDMARequest
     ULONG           bdr_Priority;
     struct MsgPort *bdr_ReplyPort;   /* NULL: the port of the client */
     ULONG *         bdr_ErrorCode;
+    ULONG *         bdr_ErrorAddress;
+    ULONG           bdr_BadAddress;  /* set by BDMA_CheckRequest() when it says BDERR_RANGE */
     ULONG           bdr_Classes;     /* BDCLASS_*: where the job may run */
     ULONG           bdr_Timeout;     /* microseconds a slice may stay on a channel, 0 = no limit */
     ULONG           bdr_Unknown;     /* tags that this version does not know */
@@ -124,7 +127,25 @@ struct BDMAClient
     BOOL                    bcl_OwnPort;        /* made by BDMA_OpenClientTagList(), deleted by BDMA_CloseClient() */
     ULONG                   bcl_Priority;       /* the default BDPRI_* of its jobs */
     struct MinList          bcl_Jobs;           /* the jobs it owns (bj_Link) */
+    struct MinList          bcl_Ranges;         /* the ranges it declared (brg_Node), under bdb_Lock */
+    LONG                    bcl_Error;          /* the first error of the detached jobs that were freed since BDMA_WaitClient() last answered */
+    ULONG                   bcl_Detached;       /* detached jobs in bcl_Jobs, over or not */
     char                    bcl_Name[32];
+};
+
+/* A range of memory that a client declared: [brg_Lo, brg_Hi), hi excluded. Only the jobs of that client may use it. */
+#define BRF_CACHED       (1 << 0)
+#define BRF_READONLY     (1 << 1)
+#define BRF_WRITEONLY    (1 << 2)
+
+struct BDMARange
+{
+    struct MinNode          brg_Node;           /* in the list of its client */
+    struct BDMAClient *     brg_Client;
+    ULONG                   brg_Lo;
+    ULONG                   brg_Hi;
+    ULONG                   brg_Flags;          /* BRF_* */
+    char                    brg_Name[32];
 };
 
 /* What the engine knows about itself, for BDMA_QueryInfoTagList() */
@@ -143,6 +164,8 @@ struct BDMAStatus
     ULONG           bds_Classes;
     ULONG           bds_VideoBase;
     ULONG           bds_VideoSize;
+    ULONG           bds_RangeLo;
+    ULONG           bds_RangeHi;
     ULONG           bds_QueueMax;
     ULONG           bds_WaitMaxUs;
     ULONG           bds_Aborts;
@@ -211,7 +234,9 @@ struct BDMABase
     ULONG                   bdb_Handle;          /* the GPU memory of the control blocks */
     ULONG                   bdb_VCBase;          /* /emu68 vc4-mem: the RTG memory, which exec does not know */
     ULONG                   bdb_VCSize;
-    ULONG                   bdb_VBR;             /* the table of the vectors of the 68k, which the DMA must not touch (learnt when the engine starts) */
+    ULONG                   bdb_GpuLo;           /* the memory of the GPU that the device tree leaves out of /memory (end of the RAM below 1 GB, to 1 GB): the only place for a range of a client; 0, 0 if unknown */
+    ULONG                   bdb_GpuHi;           /* excluded */
+    ULONG                   bdb_VBR;            /* the table of the vectors of the 68k, which the DMA must not touch (learnt when the engine starts) */
     ULONG                   bdb_MemKnown;        /* the boards and the VBR were learnt (LearnMemory); until then only the RTG memory is accepted */
     ULONG                   bdb_Boards;          /* expansion boards that are not the RAM of Emu68: BDMA_MAX_BOARDS + 1 if the list was longer */
     ULONG                   bdb_BoardLo[BDMA_MAX_BOARDS];
@@ -251,7 +276,15 @@ struct BDMABase
     struct Interrupt        bdb_TickInt;         /* the watchdog: a vertical blank server, BDJ_Timeout */
 };
 
-#define NUMBER_OF_FUNCTIONS 13
+/* Keeping the interrupts out of a short section, what Disable() did: all of them, since the interrupt of a channel comes by
+   gic400.library on INTB_EXTER, level 6, and the mask of the SR is a level (7 holds back all the others too). Under Emu68
+   Disable() and Enable() cost 6 us a pair (INTENA is written over the PiStorm bus), SetSR() less than one microsecond; both hold
+   the interrupt of the DMA (brcm-dma-cost MASK). The old SR is given back, so the sections nest, in a task and in an interrupt.
+   SysBase must be in scope. */
+#define BDMA_Lock()         SetSR(0x0700, 0x0700)
+#define BDMA_Unlock(sr)     SetSR((sr), 0x0700)
+
+#define NUMBER_OF_FUNCTIONS 16
 /* the table of jumps, rounded up to a multiple of 4: exec wants the library base on a longword boundary (V36 and later) */
 #define BASE_NEG_SIZE ((NUMBER_OF_FUNCTIONS * 6 + 3) & ~3)
 #define BASE_POS_SIZE ((sizeof(struct BDMABase)))
@@ -275,6 +308,14 @@ VOID BDMA_ReplyJob(struct BDMABase *BDMABase, struct BDMAJob *job);
 BOOL BDMA_WouldWait(struct BDMABase *BDMABase, struct BDMAJob *job);
 VOID BDMA_AbortInternal(struct BDMABase *BDMABase, struct BDMAJob *job);
 VOID BDMA_Release(struct BDMABase *BDMABase, struct BDMAJob *job);
+/* Sleeps until the job has been replied (the reply is left where it is); BDERR_OK, or BDERR_BUSY when no signal is left to sleep on */
+LONG BDMA_WaitReply(struct BDMABase *BDMABase, struct BDMAJob *job);
+/* Takes the reply of a job that is over off its port (a signal port holds it); the job is then "taken" */
+VOID BDMA_TakeReply(struct BDMABase *BDMABase, struct BDMAJob *job);
+/* Frees the detached jobs of the client that are over, and keeps the first error of them in bcl_Error. A task context. */
+VOID BDMA_ReapDetached(struct BDMABase *BDMABase, struct BDMAClient *client);
+/* Detached jobs that wait in the list of a client before BDMA_AddJobTagList() sweeps the ones that are over */
+#define BDMA_REAP_AT  32
 ULONG BDMA_DoneCode(REGARG(struct BDMABase *BDMABase, "a1"));
 
 /* The engine (engine.c) */
@@ -312,8 +353,16 @@ struct BDMABackend
 
 extern const struct BDMABackend BDMA_VC6Backend;
 extern const struct BDMABackend BDMA_VC4Backend;
-BOOL BDMA_InMemory(struct BDMABase *BDMABase, ULONG address, ULONG bytes);
+/* May a job of `client` read (write = FALSE) or write (TRUE) these bytes: the RTG memory, the memory of exec, or a range of the client.
+   A task context. */
+BOOL BDMA_InMemory(struct BDMABase *BDMABase, struct BDMAClient *client, ULONG address, ULONG bytes, BOOL write);
 BOOL BDMA_InVideoMemory(struct BDMABase *BDMABase, ULONG lo, ULONG hi);
+/* Does the CPU not cache [lo, hi): the RTG memory, or a range of the client that is not BDR_Cached. A task context. */
+BOOL BDMA_IsUncached(struct BDMABase *BDMABase, struct BDMAClient *client, ULONG lo, ULONG hi);
+/* Is a job of the client in flight on the range (for BDMA_RemRange()) */
+BOOL BDMA_RangeInUse(struct BDMAClient *client, const struct BDMARange *range);
+/* Gives the ranges of the client back (the client is closing) */
+VOID BDMA_FreeRanges(struct BDMABase *BDMABase, struct BDMAClient *client);
 
 VOID kprintf(REGARG(const char * msg, "a0"), REGARG(VOID * args, "a1"));
 
@@ -333,5 +382,8 @@ struct BDMAJob * L_BDMA_AddJobTagList(REGARG(struct BDMAClient *client, "a0"), R
 LONG L_BDMA_WaitJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
 BOOL L_BDMA_CheckJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
 VOID L_BDMA_AbortJob(REGARG(struct BDMAJob *job, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
+struct BDMARange * L_BDMA_AddRangeTagList(REGARG(struct BDMAClient *client, "a0"), REGARG(ULONG address, "d0"), REGARG(ULONG size, "d1"), REGARG(const struct TagItem *tagList, "a1"), REGARG(struct BDMABase *BDMABase, "a6"));
+LONG L_BDMA_RemRange(REGARG(struct BDMARange *range, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
+LONG L_BDMA_WaitClient(REGARG(struct BDMAClient *client, "a0"), REGARG(struct BDMABase *BDMABase, "a6"));
 
 #endif /* _BCMDMA_H */

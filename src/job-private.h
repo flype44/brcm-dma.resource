@@ -31,7 +31,11 @@
     UBYTE               bj_Reverse;         /* a move whose destination is above the source: the rows go from the last to the first */
     UBYTE               bj_Test;            /* the self test: no statistics, no reply */
     UBYTE               bj_Auto;            /* made by BDMA_AddJobTagList(): freed by the call that ends it */
+    UBYTE               bj_Detached;        /* BDJ_Detached: nobody waits for it, BDMA_WaitClient() (or a later BDMA_AddJobTagList()) frees it */
     UBYTE               bj_Taken;           /* BDMA_WaitJob() gave the result: a second call gives it again */
+    UBYTE               bj_ReadUncached;    /* the CPU does not cache what it reads / writes (RTG memory, range of the client): no cache maintenance; decided when the job was checked */
+    UBYTE               bj_WriteUncached;
+    UBYTE               bj_Stale;           /* a range that the job was checked against was removed since: BDMA_StartJob() refuses it (BDERR_RANGE) */
     ULONG               bj_ReadLo;          /* the footprint: [lo, hi) read and [lo, hi) written, hi excluded; an empty read for a fill */
     ULONG               bj_ReadHi;
     ULONG               bj_WriteLo;

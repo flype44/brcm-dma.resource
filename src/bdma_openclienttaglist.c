@@ -72,6 +72,9 @@ struct BDMAClient * L_BDMA_OpenClientTagList(
             client->bcl_Jobs.mlh_Head = (struct MinNode *)&client->bcl_Jobs.mlh_Tail;
             client->bcl_Jobs.mlh_Tail = NULL;
             client->bcl_Jobs.mlh_TailPred = (struct MinNode *)&client->bcl_Jobs.mlh_Head;
+            client->bcl_Ranges.mlh_Head = (struct MinNode *)&client->bcl_Ranges.mlh_Tail;
+            client->bcl_Ranges.mlh_Tail = NULL;
+            client->bcl_Ranges.mlh_TailPred = (struct MinNode *)&client->bcl_Ranges.mlh_Head;
 
             if (name != NULL)
             {

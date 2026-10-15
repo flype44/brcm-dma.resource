@@ -38,9 +38,10 @@ VOID L_BDMA_AbortJob(
 
         if (port != NULL && (port->mp_Flags & PF_ACTION) == PA_SIGNAL && !job->bj_Taken)
         {
-            Disable();
+            ULONG ipl = BDMA_Lock();
+
             Remove(&job->bj_Msg.mn_Node);
-            Enable();
+            BDMA_Unlock(ipl);
         }
 
         BDMA_Release(BDMABase, job);

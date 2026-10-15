@@ -23,10 +23,16 @@ VOID BDMA_Release(
     struct BDMAJob *job)
 {
     struct ExecBase *SysBase = BDMABase->bdb_ExecBase;
+    ULONG ipl;
 
-    Disable();
+    ipl = BDMA_Lock();
     Remove((struct Node *)&job->bj_Link);
-    Enable();
+    BDMA_Unlock(ipl);
+
+    if (job->bj_Detached)
+    {
+        job->bj_Client->bcl_Detached--;
+    }
 
     FreeVec(job);
 }

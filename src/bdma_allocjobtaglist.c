@@ -31,8 +31,10 @@ struct BDMAJob * L_BDMA_AllocJobTagList(
     struct BDMARequest request;
     struct BDMAJob *job = NULL;
     LONG error = BDERR_UNAVAILABLE;
+    ULONG bad = 0;
 
     request.bdr_ErrorCode = NULL;
+    request.bdr_ErrorAddress = NULL;
 
     if (client != NULL && UtilityBase != NULL)
     {
@@ -68,14 +70,16 @@ struct BDMAJob * L_BDMA_AllocJobTagList(
 
                 if (error != BDERR_OK)
                 {
+                    bad = job->bj_Request.bdr_BadAddress;
                     FreeVec(job);
                     job = NULL;
                 }
                 else
                 {
-                    Disable();
+                    ULONG ipl = BDMA_Lock();
+
                     AddTail((struct List *)&client->bcl_Jobs, (struct Node *)&job->bj_Link);
-                    Enable();
+                    BDMA_Unlock(ipl);
                 }
             }
         }
@@ -84,6 +88,11 @@ struct BDMAJob * L_BDMA_AllocJobTagList(
     if (request.bdr_ErrorCode != NULL)
     {
         *request.bdr_ErrorCode = error;
+    }
+
+    if (request.bdr_ErrorAddress != NULL)
+    {
+        *request.bdr_ErrorAddress = error == BDERR_RANGE ? bad : 0;
     }
 
     return job;
