@@ -1,0 +1,6 @@
+# Keep LF in the working copy: the builds run under WSL and the Amiga wants LF
+* text=auto eol=lf
+*.bin binary
+*.png binary
+*.psf binary
+*.gz binary
