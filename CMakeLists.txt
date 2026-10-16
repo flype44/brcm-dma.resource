@@ -105,6 +105,16 @@ target_include_directories(brcm-dma-lab PRIVATE include src)
 target_link_options(brcm-dma-lab PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-lab amiga mailbox)
 
+add_executable(brcm-dma-rows
+    test/startup.c
+    test/rows.c
+)
+
+target_compile_options(brcm-dma-rows PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_include_directories(brcm-dma-rows PRIVATE include src)
+target_link_options(brcm-dma-rows PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
+target_link_libraries(brcm-dma-rows amiga brcm_dma)
+
 add_executable(brcm-dma-cost
     test/startup.c
     test/cost.c
