@@ -181,3 +181,59 @@ to both sides, odd pitches, every alignment of the source) and step 14 (1500 ran
 | 24 bit | 1, 2, 3 pixels (3, 6, 9 bytes) | 17 op/s | 484, 485, 499 op/s | x29 |
 
 P96Speed 1.2, 640x480, `ScrollRaster() X`, measured by the author after this change: **8 bit 802, 16 bit 626, 24 bit 495, 32 bit 413 operations a second** (before: 19, 19, 19 and 255).
+
+## 8. The thresholds again, with the fast rectangles and the copies between bitmaps (2026-10-16)
+
+Since sections 1 to 3 three things changed: a rectangle with a gap costs the CPU 0.14 us a row to start instead of 0.5 (`BuildFast()`, `brcm-dma-rows`), rows that follow each
+other are one row (`BDMA_CheckRequest()`), and the driver sends the plain copies between two bitmaps to the DMA (`BlitRectNoMaskComplete`, which was the 18 Mcycle `MoveLayer`).
+The data cache is looked after by range (`CachePreDMA`, `CachePostDMA`: `Architecture.md`). Same bench as before (`test/bench/bench.sh` done by hand: `brcm-dma-screen` 1920x1080, `vcdmaset.v2`,
+`brcm-dma-info RESET`, `vcwin.v9 SCROLL FILL LMOVE LSIZE MIX`, 2 s each), driver `VideoCore.card` with `VC6_DMA_ENABLE=Yes`; `vcdmaset.v2` sets both thresholds at run time (the field `setfill` was
+added to the message of the laboratory). A cell is operations a second (millions of CPU cycles an operation). The DMA off row of the first table reproduces section 1 (ScrollRaster 294 (6.12) against
+278 (6.46), RectFill 305 (5.89) against 307 (5.87)).
+
+### Threshold of the copies (`VC6_DMA_THRESHOLD_BLITRECT`), fills on the CPU
+
+Window 1400x800 on the 1920x1080 screen:
+
+| Threshold | ScrollRaster | MoveLayer | SizeLayer | Desktop mix | DMA jobs |
+|---|---:|---:|---:|---:|---:|
+| DMA off | 294 (6.12) | 98 (18.32) | 2835 (0.63) | 179 (10.01) | 0 |
+| 4096 | 299 (0.75) | 126 (2.04) | 2158 (0.63) | 188 (7.45) | 5533 |
+| 8192 | 298 (0.75) | 126 (2.00) | 2165 (0.63) | 189 (7.40) | 4951 |
+| 16384 | 300 (0.76) | 126 (1.98) | 2187 (0.62) | 188 (7.45) | 4479 |
+| 32768 | 299 (0.75) | 129 (2.02) | 2730 (0.66) | 189 (7.52) | 2252 |
+| **65536** | 299 (0.75) | 129 (2.02) | **2827 (0.64)** | 189 (7.47) | 975 |
+| 131072 | 299 (0.75) | 129 (2.03) | 2836 (0.63) | 189 (7.49) | 974 |
+
+Window 600x400: ScrollRaster 1077 (1.67) off, 1231 (0.40) with the DMA; MoveLayer 360 (4.99), 492 (1.14); SizeLayer 2711 off, **2228 at 4096 and 8192**, 2584 at 16384, 2704 at 32768 and 2705 at 65536;
+mix 776 (2.32), 850 (1.67). Window 300x200: ScrollRaster 3405 (0.53) off, 3130 (0.32) with the DMA (the CPU is 40% less, the rate 8% lower); MoveLayer 925 (1.95), 1448 (0.62) from 8192;
+SizeLayer 4072 off, **3131 at 4096 and 3221 at 8192**, 3999 to 4054 from 16384; mix 2492 (0.72), 2794 (0.54).
+
+* A small threshold (4096, 8192) is bad: `SizeLayer` loses 18 to 23% of its rate at every window size, as in section 1 (a job of 8 to 32 KB costs the task more than the CPU needs).
+* From 32768 to 131072 everything is the same except `SizeLayer` of the big window: **65536 keeps it (2827 against 2835 off) and gives the same as 32768 on the rest**, with 57% fewer jobs. The default 32768 costs 4% there.
+* `ScrollRaster` -88% of the CPU cycles (6.12M to 0.75M; 6.46M to 1.31M in section 1), and `MoveLayer` -89% with a rate +30% (98 to 129): the copies between bitmaps were 18M cycles an operation on the CPU.
+
+### Threshold of the fills (`VC6_DMA_THRESHOLD_FILLRECT`), copies at 32768
+
+| Window (bytes of a fill) | Fills on the CPU | 16384 | 65536 | 262144 | **524288** |
+|---|---:|---:|---:|---:|---:|
+| 1400x800 (4.5 MB): RectFill | 306 (5.87) | 451 (0.66) | 451 (0.60) | 451 (0.60) | 451 (0.60) |
+| 1400x800: SizeLayer | 2730 (0.66) | **1232 (1.04)** | 2728 (0.66) | 2718 (0.66) | 2733 (0.66) |
+| 1400x800: Desktop mix | 189 (7.52) | 194 (6.70) | 194 (6.73) | 194 (6.67) | 194 (6.70) |
+| 600x400 (960 KB): RectFill | 1410 (1.28) | 1241 (0.31) | 1241 (0.30) | 1241 (0.30) | 1240 (0.30) |
+| 600x400: SizeLayer | 2704 (0.67) | **1613 (0.98)** | 2688 (0.67) | 2672 (0.67) | 2673 (0.67) |
+| 300x200 (240 KB): RectFill | 5280 (0.34) | **3408 (0.25)** | **3404 (0.26)** | 5275 (0.34) | 5297 (0.34) |
+
+* A fill of 4.5 MB by the DMA is both faster (+47%: 306 to 451 operations a second) and 90% cheaper for the CPU (5.87M to 0.60M cycles). Section 3 had 433 (1.09M) at 524288: the cycles of an operation are 45% fewer
+  with the fast rectangles.
+* A fill of 960 KB takes 12% more time by the DMA and 77% fewer cycles; one of 240 KB takes 36% more time for 24% fewer cycles: the DMA frees the CPU but the job costs more than the fill, so a threshold between
+  the two sizes (**262144 to 524288**) leaves the small fills to the CPU. A threshold of 16384 is bad again: `SizeLayer` loses 55% (its fills are small).
+* **524288 is right as it is.** The fills by DMA are a ToolType that the machine did not use (`VC6_DMA_ENABLE=No`, then no way to switch it on: the code had no branch for `Yes`, fixed 2026-10-16).
+
+### What the numbers say
+
+| ToolType | Value | Why |
+|---|---|---|
+| `VC6_DMA_ENABLE` | Yes | `ScrollRaster` -88%, `MoveLayer` -89% and +30%, `RectFill` of a big window -90% and +47% |
+| `VC6_DMA_THRESHOLD_BLITRECT` | 65536 (32768 is almost as good) | the whole gain, and `SizeLayer` of the big window at its rate without the DMA |
+| `VC6_DMA_THRESHOLD_FILLRECT` | 524288 | the DMA only where it is faster or frees much more than it costs |
