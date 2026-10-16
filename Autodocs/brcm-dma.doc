@@ -256,6 +256,10 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
 	waits for it; jobs that touch different memory run together, on the channels there are. A job of more than a megabyte runs in slices, so that a
 	more urgent one does not wait for its end.
 
+	A rectangle costs the CPU a control block for each row (about 0.6 us: a picture of 1080 rows of 1280 bytes, 645 us to start). When the rows follow
+	each other in the source and in the destination (BDJ_SrcPitch and BDJ_DstPitch equal to BDJ_Length, or left out), the job is done as one row of all
+	the bytes (173 us for the same 1.4 MB, whatever the number of rows); nothing changes for the caller. A BDJ_Move keeps its rows.
+
 	Unless BDJ_NoCache, the data cache is written back before the transfer and dropped after it, before the reply: the CPU reads what the DMA wrote.
 	The memory of the RTG board (BDI_VideoBase, BDI_VideoSize), which the CPU does not cache, is left alone: a job inside it needs no BDJ_NoCache.
 

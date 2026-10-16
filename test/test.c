@@ -373,16 +373,58 @@ static void StepCopy(void)
     Check("fill: after", *(ULONG *)((UBYTE *)b + 20 + 252), 0x11111111);
     Check("fill: after the last row", *(ULONG *)((UBYTE *)b + 20 + 61 * 512), 0x11111111);
 
-    /* more rows than one chain holds (BDMA_SLICE_UNITS): the job runs in slices, each of them a chain */
-    FillZone(ZONE_A, 3000 * 16, 14);
-    ClearZone(ZONE_B, 3000 * 16 + 64, 0x22222222);
+    /* more rows than one chain holds (BDMA_SLICE_UNITS): the job runs in slices, each of them a chain (a pitch larger than the
+       length: rows that follow each other would be one row) */
+    FillZone(ZONE_A, 3000 * 32, 14);
+    ClearZone(ZONE_B, 3000 * 32 + 64, 0x22222222);
     Check("3000 rows", Run((struct TagItem[]){ { BDJ_Src, (ULONG)a }, { BDJ_Dst, (ULONG)b }, { BDJ_Length, 16 }, { BDJ_Rows, 3000 },
-                                              { BDJ_SrcPitch, 16 }, { BDJ_DstPitch, 16 }, { TAG_DONE, 0 } }), BDERR_OK);
-    for (i = 0, bad = 0; i < 3000 * 4; i++)
+                                              { BDJ_SrcPitch, 32 }, { BDJ_DstPitch, 32 }, { TAG_DONE, 0 } }), BDERR_OK);
+    for (y = 0, bad = 0; y < 3000; y++)
+        for (i = 0; i < 4; i++)
+            if (b[y * 8 + i] != a[y * 8 + i])
+                bad++;
+    Check("3000 rows: longwords that differ", bad, 0);
+    Check("3000 rows: between two rows", b[4], 0x22222222);
+    Check("3000 rows: after the last row", b[2999 * 8 + 4], 0x22222222);
+
+    /* rows that follow each other (the pitch is the length) are done as one row of all the bytes: the same result, a copy, a fill,
+       with a pitch of one side only (not coalesced), then in the timing of the job */
+    FillZone(ZONE_A, 100 * 1280, 15);
+    ClearZone(ZONE_B, 100 * 1280 + 64, 0x33333333);
+    Check("100 rows that follow each other", Run((struct TagItem[]){ { BDJ_Src, (ULONG)a }, { BDJ_Dst, (ULONG)b }, { BDJ_Length, 1280 },
+                                              { BDJ_Rows, 100 }, { BDJ_SrcPitch, 1280 }, { BDJ_DstPitch, 1280 }, { TAG_DONE, 0 } }), BDERR_OK);
+    for (i = 0, bad = 0; i < 100 * 1280 / 4; i++)
         if (b[i] != a[i])
             bad++;
-    Check("3000 rows: longwords that differ", bad, 0);
-    Check("3000 rows: after the last row", b[3000 * 4], 0x22222222);
+    Check("100 rows that follow each other: longwords that differ", bad, 0);
+    Check("100 rows that follow each other: after the last row", b[100 * 1280 / 4], 0x33333333);
+
+    ClearZone(ZONE_B, 100 * 1280 + 64, 0x44444444);
+    Check("fill of 100 rows that follow each other", Run((struct TagItem[]){ { BDJ_FillValue, 0xDEADBEEF }, { BDJ_Dst, (ULONG)b + 8 },
+                                              { BDJ_Length, 1280 }, { BDJ_Rows, 100 }, { BDJ_DstPitch, 1280 }, { TAG_DONE, 0 } }), BDERR_OK);
+    for (i = 0, bad = 0; i < 100 * 1280 / 4; i++)
+        if (b[2 + i] != 0xDEADBEEF)
+            bad++;
+    Check("fill of 100 rows that follow each other: longwords that differ", bad, 0);
+    Check("fill of 100 rows that follow each other: before", b[1], 0x44444444);
+    Check("fill of 100 rows that follow each other: after", b[2 + 100 * 1280 / 4], 0x44444444);
+
+    {
+        ULONG t0, t1, t2, contiguous, gap;
+
+        ClearZone(ZONE_B, 100 * 1280 + 64, 0);
+        t0 = timer_now();
+        Run((struct TagItem[]){ { BDJ_Src, (ULONG)a }, { BDJ_Dst, (ULONG)b }, { BDJ_Length, 1280 }, { BDJ_Rows, 90 },
+                                { BDJ_SrcPitch, 1280 }, { BDJ_DstPitch, 1280 }, { TAG_DONE, 0 } });
+        t1 = timer_now();
+        Run((struct TagItem[]){ { BDJ_Src, (ULONG)a }, { BDJ_Dst, (ULONG)b }, { BDJ_Length, 1280 }, { BDJ_Rows, 90 },
+                                { BDJ_SrcPitch, 1280 }, { BDJ_DstPitch, 1344 }, { TAG_DONE, 0 } });
+        t2 = timer_now();
+        contiguous = t1 - t0;
+        gap = t2 - t1;
+        Printf("  90 rows of 1280 bytes, add and wait: %ld us when the rows follow each other, %ld us with a gap of 64 bytes\n",
+               (LONG)contiguous, (LONG)gap);
+    }
 }
 
 /* A scroll, compared with a model of it made by the CPU: BDJ_Move by whole rows, down (the rows go backwards) and up */
