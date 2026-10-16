@@ -36,6 +36,11 @@
     UBYTE               bj_ReadUncached;    /* the CPU does not cache what it reads / writes (RTG memory, range of the client): no cache maintenance; decided when the job was checked */
     UBYTE               bj_WriteUncached;
     UBYTE               bj_Stale;           /* a range that the job was checked against was removed since: BDMA_StartJob() refuses it (BDERR_RANGE) */
+    ULONG               bj_Width;           /* the geometry that the engine runs, made by BDMA_CheckRequest(): the one of the request, or, when the rows follow each other, one row of all the bytes.
+                                               The request is left as the client wrote it (BDMA_SetJobTagList() changes what the tags name, the rest stays) */
+    ULONG               bj_Height;
+    ULONG               bj_SrcStep;         /* bytes between two rows of the source / of the destination */
+    ULONG               bj_DstStep;
     ULONG               bj_ReadLo;          /* the footprint: [lo, hi) read and [lo, hi) written, hi excluded; an empty read for a fill */
     ULONG               bj_ReadHi;
     ULONG               bj_WriteLo;

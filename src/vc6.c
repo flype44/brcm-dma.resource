@@ -216,9 +216,9 @@ static VOID Build(
     BOOL fill = (r->bdr_Given & BDRF_FILL) != 0;
     ULONG *cb = channel->bc_Chain;
     ULONG chain = (ULONG)channel->bc_Chain;
-    ULONG width = r->bdr_Length, height = r->bdr_Rows;
+    ULONG width = job->bj_Width, height = job->bj_Height;
     ULONG src = fill ? (ULONG)channel->bc_Constant : r->bdr_Src;
-    ULONG srcpitch = fill ? 0 : r->bdr_SrcPitch;
+    ULONG srcpitch = fill ? 0 : job->bj_SrcStep;
     ULONG k = 0, part, i;
     ULONG pieces = (width + BDMA_SLICE_BYTES - 1) / BDMA_SLICE_BYTES;     /* units of a row */
     ULONG u, bytes = 0;
@@ -263,7 +263,7 @@ static VOID Build(
         ULONG w = width - col > BDMA_SLICE_BYTES ? BDMA_SLICE_BYTES : width - col;
         ULONG ry = job->bj_Reverse ? height - 1 - row : row;
         ULONG s = src + ry * srcpitch + col;
-        ULONG t = r->bdr_Dst + ry * r->bdr_DstPitch + col;
+        ULONG t = r->bdr_Dst + ry * job->bj_DstStep + col;
         ULONG head = (0 - t) & 15, body, tail, off[3], len[3];
 
         if (head > w)
@@ -410,6 +410,10 @@ static ULONG SelfTest(
     job.bj_Request.bdr_Rows = 1;
     job.bj_Request.bdr_SrcPitch = SELFTEST_SIZE;
     job.bj_Request.bdr_DstPitch = SELFTEST_SIZE;
+    job.bj_Width = SELFTEST_SIZE;
+    job.bj_Height = 1;
+    job.bj_SrcStep = SELFTEST_SIZE;
+    job.bj_DstStep = SELFTEST_SIZE;
 
     ipl = BDMA_Lock();
     channel->bc_Job = &job;

@@ -152,21 +152,6 @@ LONG BDMA_ParseTags(
         return BDERR_ARGS;
     }
 
-    /* Rows that follow each other, in the source and in the destination (a pitch equal to the length), are one row of all the
-       bytes. A rectangle costs a control block for each row (about 0.6 us: 645 us for a picture of 1080 rows of 1280 bytes),
-       one row costs the same whatever its length (173 us for the same bytes). A move keeps its rows: it is done by their order. */
-    if (r->bdr_Rows > 1 &&
-        !(r->bdr_Given & BDRF_MOVE) &&
-        r->bdr_DstPitch == r->bdr_Length &&
-        ((r->bdr_Given & BDRF_FILL) || r->bdr_SrcPitch == r->bdr_Length) &&
-        r->bdr_Length <= 0x3fffffffUL / r->bdr_Rows)
-    {
-        r->bdr_Length *= r->bdr_Rows;
-        r->bdr_Rows = 1;
-        r->bdr_SrcPitch = r->bdr_Length;
-        r->bdr_DstPitch = r->bdr_Length;
-    }
-
     return BDERR_OK;
 }
 

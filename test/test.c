@@ -409,6 +409,40 @@ static void StepCopy(void)
     Check("fill of 100 rows that follow each other: before", b[1], 0x44444444);
     Check("fill of 100 rows that follow each other: after", b[2 + 100 * 1280 / 4], 0x44444444);
 
+    /* a job set again: the tags name what changes and the rest stays, whatever the resource does with rows that follow each other */
+    {
+        struct BDMAJob *j;
+        ULONG e = 0xdead, done = 0;
+
+        FillZone(ZONE_A, 100 * 1280, 17);
+        ClearZone(ZONE_B, 100 * 1280 + 64, 0x55555555);
+        j = BDMA_AllocJobTags(Client, BDJ_Src, (ULONG)a, BDJ_Dst, (ULONG)b, BDJ_Length, 1280, BDJ_Rows, 100, BDJ_SrcPitch, 1280, BDJ_DstPitch, 1280,
+                              BDJ_ErrorCode, (ULONG)&e, TAG_DONE);
+        Check("set again: job described", e, BDERR_OK);
+        if (j != NULL)
+        {
+            Check("set again: only the rows change", BDMA_SetJobTags(j, BDJ_Rows, 50, TAG_DONE), BDERR_OK);
+            BDMA_StartJob(j);
+            Check("set again: 50 rows", BDMA_WaitJob(j), BDERR_OK);
+            BDMA_QueryJobTags(j, BDJI_BytesDone, (ULONG)&done, TAG_DONE);
+            Check("set again: bytes done", done, 50 * 1280);
+            for (i = 0, bad = 0; i < 50 * 1280 / 4; i++)
+                if (b[i] != a[i])
+                    bad++;
+            Check("set again: longwords that differ", bad, 0);
+            Check("set again: after the 50 rows", b[50 * 1280 / 4], 0x55555555);
+
+            Check("set again: only the length changes", BDMA_SetJobTags(j, BDJ_Length, 640, BDJ_SrcPitch, 640, BDJ_DstPitch, 640, TAG_DONE), BDERR_OK);
+            ClearZone(ZONE_B, 100 * 1280 + 64, 0x66666666);
+            BDMA_StartJob(j);
+            Check("set again: 50 rows of 640", BDMA_WaitJob(j), BDERR_OK);
+            BDMA_QueryJobTags(j, BDJI_BytesDone, (ULONG)&done, TAG_DONE);
+            Check("set again: bytes done, 50 x 640", done, 50 * 640);
+            Check("set again: after 50 x 640", b[50 * 640 / 4], 0x66666666);
+            BDMA_FreeJob(j);
+        }
+    }
+
     {
         ULONG t0, t1, t2, contiguous, gap;
 

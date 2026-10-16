@@ -94,6 +94,26 @@ LONG BDMA_CheckRequest(
         }
     }
 
+    /* The geometry that the engine runs. Rows that follow each other, in the source and in the destination (a pitch equal to the length), are one row of all the
+       bytes: a rectangle costs the CPU a block of control for each row (about 0.5 us a row, 645 us for a picture of 1080 rows of 1280 bytes), one row costs the
+       same whatever its length (173 us for the same bytes). A move keeps its rows: it is done by their order. The request itself is not changed. */
+    job->bj_Width = length;
+    job->bj_Height = rows;
+    job->bj_SrcStep = r->bdr_SrcPitch;
+    job->bj_DstStep = r->bdr_DstPitch;
+
+    if (rows > 1 &&
+        !(r->bdr_Given & BDRF_MOVE) &&
+        r->bdr_DstPitch == length &&
+        (fill || r->bdr_SrcPitch == length) &&
+        length <= 0x3fffffffUL / rows)
+    {
+        job->bj_Width = length * rows;
+        job->bj_Height = 1;
+        job->bj_SrcStep = job->bj_Width;
+        job->bj_DstStep = job->bj_Width;
+    }
+
     return BDERR_OK;
 }
 
