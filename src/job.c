@@ -150,8 +150,8 @@ void BDMA_AbortInternal(
 /* The software interrupt that Finish() causes:
    for each job that is over, the cache (what the DMA wrote is in the memory,
    not in the data cache; nothing to do for the source, which the DMA only read),
-   then the reply. A job of a few KB costs lines, a big one the call of the system:
-   that is why it is not done by the interrupt of the channel.
+   then the reply. The maintenance of a big area is too long for the interrupt of the channel
+   (above BDMA_INTERRUPT_MAX).
 */
 ULONG BDMA_DoneCode(
     REGARG(struct BDMABase *BDMABase, "a1"))
@@ -177,13 +177,7 @@ ULONG BDMA_DoneCode(
             !(job->bj_Request.bdr_Given & BDRF_NOCACHE) && 
             !job->bj_WriteUncached)
         {
-            ULONG bytes = job->bj_WriteHi - job->bj_WriteLo;
-
-            if (!BDMA_DropRange(job->bj_WriteLo, bytes))
-            {
-                LONG l = bytes;
-                CachePostDMA((APTR)job->bj_WriteLo, &l, 0);
-            }
+            BDMA_CacheAfter(SysBase, job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo);
         }
 
         BDMA_ReplyJob(BDMABase, job);

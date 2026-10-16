@@ -18,42 +18,6 @@
 #include "hw-vc4.h"     /* timer_now() */
 #include "cache.h"
 
-/* The data cache is not coherent with the DMA:
-   write back what the CPU wrote and drop the lines before the transfer
-   (the software interrupt that replies drops them again after it).
-   A small area line by line, a medium one page by page, a very big one by the call of the system (CachePreDMA()
-   gives back the length of the contiguous piece it handled: loop until the area is done).
-*/
-static VOID CachePre(
-    struct ExecBase *SysBase, 
-    ULONG address, 
-    ULONG bytes, 
-    ULONG flags)
-{
-    ULONG first = 1;
-
-    if (BDMA_PushRange(address, bytes))
-    {
-        return;
-    }
-
-    while (bytes)
-    {
-        LONG l = bytes;
-
-        CachePreDMA((APTR)address, &l, flags | (first ? 0 : DMA_Continue));
-        first = 0;
-
-        if (l <= 0 || (ULONG)l > bytes)
-        {
-            break;
-        }
-
-        address += l;
-        bytes -= l;
-    }
-}
-
 /* Queues the job, which was described by BDMA_AllocJobTagList():
    no allocation and no parsing here, so a software interrupt may call it (the next block
    of a transfer, for instance). The job is replied to its port when it is over. With BDJ_NoWait and every channel busy it is replied at once, with BDERR_BUSY.
@@ -99,15 +63,17 @@ VOID L_BDMA_StartJob(
 
     if (!(r->bdr_Given & BDRF_NOCACHE))
     {
-        /* the memory of the RTG board, and the ranges that the client says are not cached, are not cached by the CPU */
+        /* The data cache is not coherent with the DMA: write back what the CPU wrote and drop the lines before the transfer
+           (the interrupt of the channel, or the software interrupt that replies, drops them again after it).
+           The memory of the RTG board, and the ranges that the client says are not cached, are not cached by the CPU */
         if (!(r->bdr_Given & BDRF_FILL) && !job->bj_ReadUncached)
         {
-            CachePre(SysBase, job->bj_ReadLo, job->bj_ReadHi - job->bj_ReadLo, DMA_ReadFromRAM);
+            BDMA_CacheBefore(SysBase,job->bj_ReadLo, job->bj_ReadHi - job->bj_ReadLo, DMA_ReadFromRAM);
         }
 
         if (!job->bj_WriteUncached)
         {
-            CachePre(SysBase, job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo, 0);
+            BDMA_CacheBefore(SysBase, job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo, 0);
         }
     }
 

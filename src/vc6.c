@@ -197,10 +197,7 @@ static VOID BuildBounce(
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_NEXT] = 0;
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_TI] |= LE32(TI_INTEN);
 
-    if (!BDMA_PushRange((ULONG)cb, DMA_CB_BYTES * k))
-    {
-        CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
-    }
+    BDMA_CacheBefore(SysBase, (ULONG)cb, DMA_CB_BYTES * k, DMA_ReadFromRAM);
 }
 
 /* Builds, in the buffer of the channel, the chain of the next slice of the job (the channel is started by Arm()).
@@ -251,7 +248,7 @@ static VOID Build(
                 channel->bc_Constant[i] = word;
             }
 
-            BDMA_PushLines((ULONG)channel->bc_Constant, CONSTANT_SIZE);
+            BDMA_CacheBefore(SysBase, (ULONG)channel->bc_Constant, CONSTANT_SIZE, DMA_ReadFromRAM);
             channel->bc_Fill = r->bdr_Fill;
             channel->bc_FillBytes = r->bdr_FillBytes;
             channel->bc_FillSet = TRUE;
@@ -315,11 +312,8 @@ static VOID Build(
 
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_NEXT] = 0;
     cb[(k - 1) * DMA_CB_WORDS + DMA_CB_TI] |= LE32(TI_INTEN);
-    
-    if (!BDMA_PushRange((ULONG)cb, DMA_CB_BYTES * k))
-    {
-        CacheClearE(cb, DMA_CB_BYTES * k, CACRF_ClearD);
-    }
+
+    BDMA_CacheBefore(SysBase, (ULONG)cb, DMA_CB_BYTES * k, DMA_ReadFromRAM);
 }
 
 /* Starts the channel on the chain that Build() made */

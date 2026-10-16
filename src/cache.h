@@ -11,113 +11,64 @@
 #define _CACHE_H
 
 #include <exec/types.h>
+#include <exec/execbase.h>
+#include <proto/exec.h>
 
 /*
-    Cache maintenance around a transfer.
-    Measured on a Pi 4B at 1.8 GHz (brcm-dma-cost), on a machine whose ROM is exec 47.13:
-    CachePreDMA(), CachePostDMA() and CacheClearE() are all CPUSHA of the ROM, whatever the area (decoded from the
-    ROM): Emu68 turns it into dc cisw on every level of the data cache, L1 and L2: a fixed 41 us, from 64 bytes to
-    1 MB, and the whole data cache of every task is lost each time. CPUSHL (one line of 64 bytes) is dsb, dc civac,
-    dsb and the end of the translated block: 0.3 us a line. CPUSHP (one page of 4 KB) is one native loop of
-    dc civac and one dsb: 0.5 us for 4 KB, 1.2 us for 16 KB, 5.3 us for 64 KB, 15 us for 256 KB (on clean lines).
-    So: up to BDMA_LINEWISE_MAX the lines one by one (a small area does not push the lines around it away), up to
-    BDMA_PAGEWISE_MAX page by page (CPUSHP: the first and the last page push their neighbours too, which is
-    harmless), above it the call of the system (a fixed cost, and it purges the whole cache). CPUSHL and CPUSHP
-    write back a dirty line and drop it, CINVL drops it: a line shared with the data of somebody else is always
-    pushed first, never dropped alone. After the DMA the pages are pushed, not invalidated: a line of the area that
-    the CPU wrote during the transfer would be written back over the data, as a CPUSHL of the first and last line
-    does.
+    Cache maintenance around a transfer: CachePreDMA() and CachePostDMA() of exec, always.
+    With the Emu68 that has the private data-cache range opcodes (property /emu68 dcache-range-ops), 68040.library 2.0
+    does the area in one native loop on the real lines of 64 bytes and one dsb: 0 us for 64 bytes, 9 us for 256 KB,
+    37 us for 1 MB, 146 us for 4 MB (brcm-dma-cost), and only the lines of the area are touched. The lines at the two
+    ends are pushed, never dropped alone, and a source that the DMA only reads is written back and kept
+    (DMA_ReadFromRAM).
+    On an older Emu68 the same calls are the CPUSHA of the ROM: correct, but a fixed 41 us whatever the area, and the
+    whole data cache of every task is lost each time.
 */
-#define BDMA_CACHE_LINE     64
-#define BDMA_CACHE_PAGE     4096
-#define BDMA_LINEWISE_MAX   1024        /* the lines one by one up to here */
-#define BDMA_PAGEWISE_MAX   524288      /* page by page (CPUSHP) up to here; above, the call of the system */
-#define BDMA_INTERRUPT_MAX  131072      /* the maintenance after a job is done in the interrupt up to here (8 us), above in a software interrupt */
+#define BDMA_INTERRUPT_MAX  262144      /* the maintenance after a job is done in the interrupt up to here (9 us), above in a software interrupt */
 
-/* Write back what the CPU wrote, and drop the lines: before the DMA reads or writes the area */
-static inline VOID BDMA_PushLines(ULONG address, ULONG bytes)
+/* Before the DMA: write back what the CPU wrote, and drop the lines when the DMA writes the area. CachePreDMA() gives back
+   the length of the contiguous piece it handled: loop until the area is done */
+static inline VOID BDMA_CacheBefore(struct ExecBase *SysBase, ULONG address, ULONG bytes, ULONG flags)
 {
-    ULONG p = address & ~(ULONG)(BDMA_CACHE_LINE - 1);
-    ULONG end = (address + bytes + BDMA_CACHE_LINE - 1) & ~(ULONG)(BDMA_CACHE_LINE - 1);
+    ULONG first = 1;
 
-    for (; p < end; p += BDMA_CACHE_LINE)
+    while (bytes)
     {
-        asm volatile("nop; cpushl dc,(%0)" :: "a"(p) : "memory");
-    }
-}
+        LONG l = bytes;
 
-/* Drop the lines of an area that the DMA wrote, so that the CPU reads the memory: the first and the last line may hold data that is not part of the
-   area, they are pushed (and dropped) instead */
-static inline VOID BDMA_DropLines(ULONG address, ULONG bytes)
-{
-    ULONG first = address & ~(ULONG)(BDMA_CACHE_LINE - 1);
-    ULONG end = (address + bytes + BDMA_CACHE_LINE - 1) & ~(ULONG)(BDMA_CACHE_LINE - 1);
-    ULONG p;
+        CachePreDMA((APTR)address, &l, flags | (first ? 0 : DMA_Continue));
+        first = 0;
 
-    for (p = first; p < end; p += BDMA_CACHE_LINE)
-    {
-        if (p == first && address != first)
+        if (l <= 0 || (ULONG)l > bytes)
         {
-            asm volatile("nop; cpushl dc,(%0)" :: "a"(p) : "memory");
+            break;
         }
-        else if (p + BDMA_CACHE_LINE == end && ((address + bytes) & (BDMA_CACHE_LINE - 1)))
+
+        address += l;
+        bytes -= l;
+    }
+}
+
+/* After the DMA wrote the area: the CPU must read the memory, not the lines */
+static inline VOID BDMA_CacheAfter(struct ExecBase *SysBase, ULONG address, ULONG bytes)
+{
+    ULONG first = 1;
+
+    while (bytes)
+    {
+        LONG l = bytes;
+
+        CachePostDMA((APTR)address, &l, first ? 0 : DMA_Continue);
+        first = 0;
+
+        if (l <= 0 || (ULONG)l > bytes)
         {
-            asm volatile("nop; cpushl dc,(%0)" :: "a"(p) : "memory");
+            break;
         }
-        else
-        {
-            asm volatile("cinvl dc,(%0)" :: "a"(p) : "memory");
-        }
+
+        address += l;
+        bytes -= l;
     }
-}
-
-/* Write back what the CPU wrote and drop the pages, 4 KB an instruction (Emu68 runs the loop of dc civac itself) */
-static inline VOID BDMA_PushPages(ULONG address, ULONG bytes)
-{
-    ULONG p = address & ~(ULONG)(BDMA_CACHE_PAGE - 1);
-    ULONG end = (address + bytes + BDMA_CACHE_PAGE - 1) & ~(ULONG)(BDMA_CACHE_PAGE - 1);
-
-    for (; p < end; p += BDMA_CACHE_PAGE)
-    {
-        asm volatile("nop; cpushp dc,(%0)" :: "a"(p) : "memory");
-    }
-}
-
-/* Before the DMA: TRUE when the maintenance is done here (lines or pages), FALSE when the area is so big that the caller
-   uses the call of the system (CachePreDMA(), or CacheClearE()) */
-static inline BOOL BDMA_PushRange(ULONG address, ULONG bytes)
-{
-    if (bytes <= BDMA_LINEWISE_MAX)
-    {
-        BDMA_PushLines(address, bytes);
-        return TRUE;
-    }
-
-    if (bytes <= BDMA_PAGEWISE_MAX)
-    {
-        BDMA_PushPages(address, bytes);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-/* After the DMA wrote the area: TRUE when done here, FALSE when the caller uses CachePostDMA() */
-static inline BOOL BDMA_DropRange(ULONG address, ULONG bytes)
-{
-    if (bytes <= BDMA_LINEWISE_MAX)
-    {
-        BDMA_DropLines(address, bytes);
-        return TRUE;
-    }
-
-    if (bytes <= BDMA_PAGEWISE_MAX)
-    {
-        BDMA_PushPages(address, bytes);
-        return TRUE;
-    }
-
-    return FALSE;
 }
 
 #endif /* _CACHE_H */

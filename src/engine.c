@@ -810,9 +810,9 @@ static VOID Finish(
 
         if (cached && job->bj_WriteHi - job->bj_WriteLo > BDMA_INTERRUPT_MAX)
         {
-            /* a big job: the maintenance is too long for an interrupt (the call of the system, or many pages),
-               a software interrupt does it and replies. (It is not used up to BDMA_INTERRUPT_MAX: Cause()
-               costs about 60 us under Emu68, the lines or pages of such an area less than ten.) */
+            /* a big job: the maintenance is too long for an interrupt, a software interrupt does it and replies.
+               (It is not used up to BDMA_INTERRUPT_MAX: Cause() costs about 60 us under Emu68, the
+               maintenance of such an area less than ten.) */
             AddTail((struct List *)&BDMABase->bdb_Done, BDMA_JOBNODE(job));
             Cause(&BDMABase->bdb_DoneInt);
         }
@@ -820,7 +820,7 @@ static VOID Finish(
         {
             if (cached)
             {
-                BDMA_DropRange(job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo);
+                BDMA_CacheAfter(SysBase, job->bj_WriteLo, job->bj_WriteHi - job->bj_WriteLo);
             }
 
             BDMA_ReplyJob(BDMABase, job);

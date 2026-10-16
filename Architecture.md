@@ -93,7 +93,7 @@ writes over or reads from; the result is that of running them one by one). Best 
 **Completion.** The channel interrupt acknowledges, ends or requeues the job, and starts the next ones without a semaphore. A job that writes up to 128 KB does its cache work and replies in the
 interrupt (a few microseconds of pages); a bigger one through a software interrupt (the call of the system, or many pages, is too long for interrupt level).
 
-**Cache (R6).** `CachePreDMA`-equivalent before the transfer, invalidate after it, before the reply; by cache line up to 1 KB, by page (`CPUSHP`, 4 KB an instruction) up to 512 KB, the system calls above. On this machine the system calls are the `CPUSHA` of the ROM (the whole data cache, L1 and L2, purged: a fixed 41 us and a loss for every task), see `src/cache.h` for the measures.
+**Cache (R6).** `CachePreDMA()` before the transfer, `CachePostDMA()` after it, before the reply, always (`src/cache.h`). With the Emu68 that has the data-cache range opcodes (`/emu68 dcache-range-ops`, 68040.library 2.0) that is one native loop on the lines of the area: 0 us for 64 bytes, 9 us for 256 KB, 37 us for 1 MB. On an older Emu68 the same calls are the `CPUSHA` of the ROM (the whole data cache purged: a fixed 41 us and a loss for every task).
 No maintenance for the RTG memory or with `BDJ_NoCache`.
 
 **Errors and recovery.** A hardware error ends the job with `BDERR_HW`. A watchdog (vertical blank server, 20 ms resolution) gives up a slice older than `BDJ_Timeout` (default 1 s, 0 = none):
