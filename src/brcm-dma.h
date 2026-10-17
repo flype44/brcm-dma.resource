@@ -20,8 +20,18 @@
 
 
 #define BDMA_PRIORITY    117     /* after devicetree.resource (127), gic400.library (126), mailbox.resource (119) and unicam.resource (118) */
-#define BDMA_VERSION     0       /* 0.1 stays the version until a program really uses the resource and confirms that it can be used as the Autodocs say */
-#define BDMA_REVISION    3       /* 2: BDMA_AddRangeTagList() and BDMA_RemRange(); 3: BDMA_WaitClient(), BDJ_Detached, BDJ_ErrorAddress, BDI_RangeLo and BDI_RangeHi (the vectors of revisions 2 and 3 are the last ones of the table) */
+/* The version comes from project() in CMakeLists.txt, which defines BDMA_VERSION and BDMA_REVISION: the id string, lib_Version and lib_Revision cannot differ.
+   These are only for a build that does not go through CMake, keep them equal to project().
+   The version stays 0.x until a program really uses the resource and confirms that it can be used as the Autodocs say.
+   The revision is the minor number: 2 is BDMA_AddRangeTagList() and BDMA_RemRange(); 3 is BDMA_WaitClient(), BDJ_Detached, BDJ_ErrorAddress, BDI_RangeLo and
+   BDI_RangeHi (the vectors of revisions 2 and 3 are the last ones of the table) */
+#ifndef BDMA_VERSION
+#define BDMA_VERSION     0
+#endif
+
+#ifndef BDMA_REVISION
+#define BDMA_REVISION    3
+#endif
 
 /* The most rows of one rectangle */
 #define BDMA_MAX_ROWS    65535

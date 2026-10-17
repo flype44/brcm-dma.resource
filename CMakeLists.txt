@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.0)
-project(brcm-dma VERSION 0.1.0)
+project(brcm-dma VERSION 0.3.0)
 
 # "make install" gathers the products in build/install/ (CMake itself works in build/cmake/) (kernel/ the module and its blob for the ROM of Emu68, sdk/ what a developer needs,
 # tools/ the programs for the Amiga) unless another prefix is given
@@ -66,7 +66,13 @@ add_executable(brcm-dma.resource
 bin_to_header(brcm-dma.resource)
 
 target_compile_options(brcm-dma.resource PRIVATE -Os -m68040 -msmall-code -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
-target_compile_definitions(brcm-dma.resource PRIVATE VERSION_STRING="${VERSTRING}")
+# One place for the version: project(), above. The id string, lib_Version and lib_Revision all come from it
+# (add a vector to the table: raise the minor number there)
+target_compile_definitions(brcm-dma.resource PRIVATE
+    VERSION_STRING="${VERSTRING}"
+    BDMA_VERSION=${PROJECT_VERSION_MAJOR}
+    BDMA_REVISION=${PROJECT_VERSION_MINOR}
+)
 
 target_include_directories(brcm-dma.resource PRIVATE include src)
 target_link_options(brcm-dma.resource PRIVATE -ffreestanding -nostdlib -nostartfiles -s -Wl,-e_code_start -Wl,-T${CMAKE_CURRENT_SOURCE_DIR}/ldscript.lds)

@@ -24,6 +24,8 @@ The Architecture and the reasons: `Architecture.md`;
 | BDMA_AbortJob | Yes | V0.1 | Yes | stops a job in the queue or on its channel and replies it with BDERR_ABORTED |
 | BDMA_AddJobTagList | Yes | V0.1 | Yes | the shortcut: Alloc and Start, freed by the call that ends the job |
 | BDMA_AddJobTags | Yes | V0.1 | Yes | inline variant |
+| BDMA_AddRangeTagList | Yes | V0.2 | Yes | declares a range of memory that exec does not know (the framebuffer of HDMI1) for the jobs of a client; page aligned, refused where it meets the RTG memory, the memory of the channels or the range of another client |
+| BDMA_AddRangeTags | Yes | V0.2 | Yes | inline variant |
 | BDMA_AllocJobTagList | Yes | V0.1 | Yes | parses and checks the tags once; the engine starts with the first job |
 | BDMA_AllocJobTags | Yes | V0.1 | Yes | inline variant |
 | BDMA_CheckJob | Yes | V0.1 | Yes | TRUE when the job was replied |
@@ -35,7 +37,10 @@ The Architecture and the reasons: `Architecture.md`;
 | BDMA_QueryInfoTags | Yes | V0.1 | Yes | inline variant generated from the SFD (not in the table of the resource) |
 | BDMA_QueryJobTagList | Yes | V0.1 | Yes | state, error and bytes done of a job |
 | BDMA_QueryJobTags | Yes | V0.1 | Yes | inline variant |
+| BDMA_RemRange | Yes | V0.2 | Yes | takes back a range; a job that was checked against it is refused (BDERR_RANGE) |
+| BDMA_ResetStatistics | Yes | V0.1 | Yes | sets the counters back to zero (shared by every client), added on 2026-10-08 with no new revision |
 | BDMA_SetJobTagList | Yes | V0.1 | Yes | changes a job that is not in flight; a refused change leaves it as it was |
 | BDMA_SetJobTags | Yes | V0.1 | Yes | inline variant |
 | BDMA_StartJob | Yes | V0.1 | Yes | queues the job (no allocation, no parsing: a software interrupt may call it); channels, order of the jobs, priorities, slices of big jobs, cache |
+| BDMA_WaitClient | Yes | V0.3 | Yes | sleeps until none of the jobs of the client is in flight, frees the detached ones (BDJ_Detached) and gives the first error among them |
 | BDMA_WaitJob | Yes | V0.1 | Yes | sleeps until the job is replied and gives the result; any task may wait for any job, a second call gives it again |

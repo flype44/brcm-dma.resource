@@ -26,7 +26,7 @@ See [Architecture](Architecture.md) (design and what is still to do) and [Capabi
 
 ## Status
 
-Version **0.1**, tested and running on a Raspberry Pi 4B (BCM2711) in the ROM of Emu68, on the two 40 bit channels 12 and 13. The specifications and development are still Work In Progress.
+Version **0.3**, tested and running on a Raspberry Pi 4B (BCM2711) in the ROM of Emu68, on the two 40 bit channels 12 and 13. The specifications and development are still Work In Progress.
 
 1.0 GB/s for a copy, 1.25 GB/s for a fill, a job described once and started again in 49 us, an urgent 4 KB job behind two big ones in 1.8 ms, no failure in the test tools (13536 path cases, the queue, big jobs up to 64 MB, a soak).
 
