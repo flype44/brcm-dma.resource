@@ -486,7 +486,15 @@ static BOOL Peek(
     {
         if (st->version == CMD_VERSION)
         {
-            *copy = *st;
+            /* by hand: CopyMem() is the vector that this program patches */
+            {
+                const UBYTE *from = (const UBYTE *)st;
+                UBYTE *to = (UBYTE *)copy;
+                ULONG n;
+
+                for (n = 0; n < sizeof(struct State); n++)
+                    to[n] = from[n];
+            }
             found = TRUE;
         }
         else

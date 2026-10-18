@@ -687,13 +687,18 @@ static BOOL Start(
     APTR DeviceTreeBase;
     struct Library *MailboxBase;
     struct Library *GIC400_Base;
-    ULONG interrupts[LAST_40BIT_CHANNEL - FIRST_40BIT_CHANNEL + 1] = { 0, 0, 0, 0 };
+    ULONG interrupts[LAST_40BIT_CHANNEL - FIRST_40BIT_CHANNEL + 1];
     ULONG mask, size, bus, phys, firmware, number, i;
     UBYTE *scratch;
 
     BDMABase->bdb_DeviceTreeBase = OpenResource("devicetree.resource");
     DeviceTreeBase = BDMABase->bdb_DeviceTreeBase;
     MailboxBase = BDMABase->bdb_MailboxBase;
+
+    for (i = 0; i < LAST_40BIT_CHANNEL - FIRST_40BIT_CHANNEL + 1; i++)
+    {
+        interrupts[i] = 0;
+    }
 
     if (DeviceTreeBase == NULL || MailboxBase == NULL)
     {

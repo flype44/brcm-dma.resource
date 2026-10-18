@@ -124,6 +124,31 @@ struct BDMARequest
     ULONG           bdr_Unknown;     /* tags that this version does not know */
 };
 
+/* A request copied field by field: no CopyMem() (the copy of the memory may one day be the DMA of this very resource) and no memcpy() (there is no C library).
+   Add a field to the structure and the check below stops the build until it is added here too. */
+_Static_assert(sizeof(struct BDMARequest) == 17 * sizeof(ULONG), "a field of struct BDMARequest was added: BDMA_CopyRequest() must copy it");
+
+static inline void BDMA_CopyRequest(struct BDMARequest *to, const struct BDMARequest *from)
+{
+    to->bdr_Given = from->bdr_Given;
+    to->bdr_Src = from->bdr_Src;
+    to->bdr_Dst = from->bdr_Dst;
+    to->bdr_Fill = from->bdr_Fill;
+    to->bdr_FillBytes = from->bdr_FillBytes;
+    to->bdr_Length = from->bdr_Length;
+    to->bdr_Rows = from->bdr_Rows;
+    to->bdr_SrcPitch = from->bdr_SrcPitch;
+    to->bdr_DstPitch = from->bdr_DstPitch;
+    to->bdr_Priority = from->bdr_Priority;
+    to->bdr_ReplyPort = from->bdr_ReplyPort;
+    to->bdr_ErrorCode = from->bdr_ErrorCode;
+    to->bdr_ErrorAddress = from->bdr_ErrorAddress;
+    to->bdr_BadAddress = from->bdr_BadAddress;
+    to->bdr_Classes = from->bdr_Classes;
+    to->bdr_Timeout = from->bdr_Timeout;
+    to->bdr_Unknown = from->bdr_Unknown;
+}
+
 /* struct BDMAJob and the tags: the public header, with the private part of the job (job-private.h) inside the structure */
 #define BDMA_PRIVATE
 #include <resources/brcm-dma.h>

@@ -61,7 +61,7 @@ struct BDMAJob * L_BDMA_AllocJobTagList(
             }
             else
             {
-                job->bj_Request = request;
+                BDMA_CopyRequest(&job->bj_Request, &request);
                 job->bj_Active = 0;
                 job->bj_InQueue = 0;
                 job->bj_State = BJS_IDLE;

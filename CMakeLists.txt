@@ -65,7 +65,9 @@ add_executable(brcm-dma.resource
 
 bin_to_header(brcm-dma.resource)
 
-target_compile_options(brcm-dma.resource PRIVATE -Os -m68040 -msmall-code -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+# -fno-tree-loop-distribute-patterns: GCC 16 turns a loop that copies or clears into a call to memcpy() or memset(), and there is no C library
+# -Warray-bounds reads SysBase at address 4 (the AmigaOS convention) as an access to an array of size 0 near NULL: a false positive of GCC 16, switched off
+target_compile_options(brcm-dma.resource PRIVATE -Os -m68040 -msmall-code -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 # One place for the version: project(), above. The id string, lib_Version and lib_Revision all come from it
 # (add a vector to the table: raise the minor number there)
 target_compile_definitions(brcm-dma.resource PRIVATE
@@ -80,12 +82,13 @@ target_link_libraries(brcm-dma.resource devicetree gic400 mailbox)
 
 set_target_properties(brcm-dma.resource PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ldscript.lds)
 
+# The tools are built with -O2: at -Os GCC 16 calls memcpy() for the larger initialisers of a test (compound literals), and the tools have no C library
 add_executable(brcm-dma-test
     test/startup.c
     test/test.c
 )
 
-target_compile_options(brcm-dma-test PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-test PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-test PRIVATE include src)
 target_link_options(brcm-dma-test PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-test amiga brcm_dma gic400)
@@ -95,7 +98,7 @@ add_executable(brcm-dma-stress
     test/stress.c
 )
 
-target_compile_options(brcm-dma-stress PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-stress PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-stress PRIVATE include src)
 target_link_options(brcm-dma-stress PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-stress amiga brcm_dma mailbox)
@@ -106,7 +109,7 @@ add_executable(brcm-dma-lab
     src/mbox.c
 )
 
-target_compile_options(brcm-dma-lab PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-lab PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-lab PRIVATE include src)
 target_link_options(brcm-dma-lab PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-lab amiga mailbox)
@@ -116,7 +119,7 @@ add_executable(brcm-dma-rows
     test/rows.c
 )
 
-target_compile_options(brcm-dma-rows PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-rows PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-rows PRIVATE include src)
 target_link_options(brcm-dma-rows PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-rows amiga brcm_dma)
@@ -126,7 +129,7 @@ add_executable(brcm-dma-cost
     test/cost.c
 )
 
-target_compile_options(brcm-dma-cost PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-cost PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-cost PRIVATE include src)
 target_link_options(brcm-dma-cost PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-cost amiga brcm_dma)
@@ -136,7 +139,7 @@ add_executable(copymemdma
     test/copymemdma.c
 )
 
-target_compile_options(copymemdma PRIVATE -Os -m68040 -fomit-frame-pointer -std=gnu89 -Wdeclaration-after-statement -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(copymemdma PRIVATE -O2 -m68040 -fomit-frame-pointer -std=gnu89 -Wdeclaration-after-statement -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(copymemdma PRIVATE include src)
 target_compile_definitions(copymemdma PRIVATE VERSION_STRING="${COPYMEMDMA_VERSTRING}")
 target_link_options(copymemdma PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
@@ -147,7 +150,7 @@ add_executable(brcm-dma-stack
     test/stack.c
 )
 
-target_compile_options(brcm-dma-stack PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-stack PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-stack PRIVATE include src)
 target_link_options(brcm-dma-stack PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-stack amiga brcm_dma)
@@ -158,27 +161,27 @@ if(EXISTS "${P96_INCLUDE}/proto/Picasso96.h")
     add_executable(brcm-dma-screen
         test/startup.c
         test/screen.c
-    )
+        )
 
-    target_compile_options(brcm-dma-screen PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+    target_compile_options(brcm-dma-screen PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
     target_include_directories(brcm-dma-screen PRIVATE include src ${P96_INCLUDE})
     target_link_options(brcm-dma-screen PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
     target_link_libraries(brcm-dma-screen amiga)
     add_executable(brcm-dma-scroll
         test/startup.c
         test/scroll.c
-    )
+        )
 
-    target_compile_options(brcm-dma-scroll PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+    target_compile_options(brcm-dma-scroll PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
     target_include_directories(brcm-dma-scroll PRIVATE include src ${P96_INCLUDE})
     target_link_options(brcm-dma-scroll PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
     target_link_libraries(brcm-dma-scroll amiga)
     add_executable(brcm-dma-fillchk
         test/startup.c
         test/fillchk.c
-    )
+        )
 
-    target_compile_options(brcm-dma-fillchk PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+    target_compile_options(brcm-dma-fillchk PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
     target_include_directories(brcm-dma-fillchk PRIVATE include src ${P96_INCLUDE})
     target_link_options(brcm-dma-fillchk PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
     target_link_libraries(brcm-dma-fillchk amiga brcm_dma)
@@ -190,7 +193,7 @@ add_executable(brcm-dma-info
     test/info.c
 )
 
-target_compile_options(brcm-dma-info PRIVATE -Os -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main)
+target_compile_options(brcm-dma-info PRIVATE -O2 -m68040 -fomit-frame-pointer -Wall -Wno-pointer-sign -Wno-main -Wno-array-bounds -fno-tree-loop-distribute-patterns)
 target_include_directories(brcm-dma-info PRIVATE include src)
 target_link_options(brcm-dma-info PRIVATE -ffreestanding -m68040 -nostdlib -nostartfiles -Wl,-e,__start)
 target_link_libraries(brcm-dma-info amiga brcm_dma)

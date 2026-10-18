@@ -80,6 +80,21 @@ if ((BDMABase = OpenResource(BRCMDMANAME)) != NULL)
 }
 ```
 
+## Build
+
+With the m68k-amigaos gcc (bebbo 6.5) in the path:
+
+    CC=m68k-amigaos-gcc cmake -S . -B build/cmake
+    cmake --build build/cmake
+    cmake --install build/cmake --prefix build/install
+
+With GCC 16.2, from the toolchain image of the stack (no local compiler needed):
+
+    docker run --rm -v "$PWD:/work" -w /work -u "$(id -u):$(id -g)" -e HOME=/tmp         -e CC=/opt/m68k-amigaos/bin/m68k-amigaos-gcc         ghcr.io/rondoval/amiga-build-container:gcc-v16.2         sh -c 'cmake -S . -B build/gcc16 && cmake --build build/gcc16'
+
+Both give zero warnings. The resource has no C library, and calls none: GCC 16 turns some loops and structure copies into `memcpy()` and `memset()` where GCC 6 did not, so the loops are told not to (`-fno-tree-loop-distribute-patterns`) and the structure copies are done field by field (not with `CopyMem()`: the copy of the memory may one day be the DMA of this very resource). The tools are built with `-O2` for the same reason.
+The products are in `build/install/` (`kernel/` the module and its blob for the ROM of Emu68, `sdk/` Autodocs, FD, SFD and headers, `tools/`).
+
 ## Licence
 
 MPL-2.0, as Emu68, see [LICENSE](LICENSE).

@@ -41,7 +41,7 @@ LONG L_BDMA_SetJobTagList(
         return BDERR_BUSY;
     }
 
-    saved    = job->bj_Request;
+    BDMA_CopyRequest(&saved, &job->bj_Request);
     read_lo  = job->bj_ReadLo;
     read_hi  = job->bj_ReadHi;
     write_lo = job->bj_WriteLo;
@@ -62,7 +62,7 @@ LONG L_BDMA_SetJobTagList(
 
     if (error != BDERR_OK)
     {
-        job->bj_Request = saved;
+        BDMA_CopyRequest(&job->bj_Request, &saved);
         job->bj_ReadLo = read_lo;
         job->bj_ReadHi = read_hi;
         job->bj_WriteLo = write_lo;
