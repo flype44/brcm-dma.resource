@@ -19,11 +19,6 @@ if(NOT TARGET mailbox)
     add_subdirectory(mailbox.resource EXCLUDE_FROM_ALL)
 endif()
 
-# gic400.library ships its headers already generated (proto/, inline/, clib/, pragmas/, libraries/gic400.h): only those are used. The project itself is
-# not added: it needs Emu68Common to be built, and the library is in the ROM of Emu68 anyway.
-add_library(gic400 INTERFACE)
-target_include_directories(gic400 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/gic400.library/include)
-
 # What is ours comes last: the projects above define a bin_to_header(), a get_verstring() and an sfdc() of their own, and the last definition is the one
 # that stays (the sfdc() of this repository names the generated files after the module, see cmake/sfdc.cmake)
 include(cmake/bin2h.cmake)
@@ -34,6 +29,11 @@ get_verstring(VERSTRING)
 # the same string for the tools that carry one, under their own name
 string(REPLACE "$VER: ${PROJECT_NAME} " "$VER: copymemdma " COPYMEMDMA_VERSTRING "${VERSTRING}")
 sfdc(sfd/brcm-dma_lib.sfd)
+
+# gic400.library is the project of rondoval (the one that Emu68 builds into its ROM), here the fork with its Autodocs and FD. It ships its SFD and libraries/gic400.h, not the
+# stubs: they are generated here (target gic400). The project itself is not added: it needs Emu68Common to be built, and the library is in the ROM of Emu68 anyway.
+sfdc(gic400.library/sfd/gic400.sfd)
+target_include_directories(gic400 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/gic400.library/include)
 
 add_executable(brcm-dma.resource
     src/main.c
@@ -221,8 +221,9 @@ add_custom_target(brcm-dma_resources_header ALL
 install(PROGRAMS $<TARGET_FILE:brcm-dma.resource> DESTINATION kernel)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/brcm-dma.resource.h DESTINATION kernel)
 
-install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/ DESTINATION sdk/include)
-install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/FD/ DESTINATION sdk/FD)
+# only the files of this resource: the build directory also holds the stubs of gic400.library, generated for the build and not part of this SDK
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/ DESTINATION sdk/include FILES_MATCHING PATTERN "brcm-dma*")
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/FD/ DESTINATION sdk/FD FILES_MATCHING PATTERN "brcm-dma*")
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/SFD/ DESTINATION sdk/SFD)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Autodocs/ DESTINATION sdk/Autodocs)
 

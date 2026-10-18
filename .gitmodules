@@ -1,9 +1,12 @@
 [submodule "devicetree.resource"]
 	path = devicetree.resource
-	url = https://github.com/michalsc/devicetree.resource.git
+	url = https://github.com/flype44/devicetree.resource.git
+	branch = autodoc
 [submodule "mailbox.resource"]
 	path = mailbox.resource
-	url = https://github.com/michalsc/mailbox.resource.git
+	url = https://github.com/flype44/mailbox.resource.git
+	branch = transaction
 [submodule "gic400.library"]
 	path = gic400.library
-	url = https://github.com/michalsc/gic400.library.git
+	url = https://github.com/flype44/emu68-gic400-library.git
+	branch = autodoc
