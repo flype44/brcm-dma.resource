@@ -24,13 +24,9 @@ brcm-dma.resource/BDMA_SetJobTags
 brcm-dma.resource/BDMA_StartJob
 brcm-dma.resource/BDMA_WaitClient
 brcm-dma.resource/BDMA_WaitJob
+brcm-dma.resource/--background--             brcm-dma.resource/--background--
 
-brcm-dma.resource/--background--                    brcm-dma.resource/--background--
-
-   NAME
-	--background-- -- the versions of the resource, and how they are written here
-
-   FUNCTION
+   VERSION MARKS
 	The calls of this resource are described one by one below. This entry says
 	since when each exists, and how a change is told, as the autodocs of the
 	system do (see exec.library/AllocPooled or StackSwap).
@@ -74,7 +70,7 @@ brcm-dma.resource/--background--                    brcm-dma.resource/--backgrou
 	                  built by a short loop. These make the start of a job
 	                  cheaper and change nothing in what a call does.
 
-   NOTES
+   VERSION AND REVISION
 	lib_Version and lib_Revision of the resource come from the same place as
 	the id string, the version of the project: 0.3 gives lib_Version 0 and
 	lib_Revision 3. BDI_Version gives them as (version << 16) | revision.
@@ -91,14 +87,14 @@ brcm-dma.resource/--background--                    brcm-dma.resource/--backgrou
    SEE ALSO
 	exec.library/OpenResource(), brcm-dma.resource/BDMA_QueryInfoTagList()
 
-brcm-dma.resource/BDMA_AbortJob                     brcm-dma.resource/BDMA_AbortJob
+brcm-dma.resource/BDMA_AbortJob               brcm-dma.resource/BDMA_AbortJob
 
    NAME
 	BDMA_AbortJob -- stop a job
 
    SYNOPSIS
 	BDMA_AbortJob( job )
-	a0
+	               a0
 
 	VOID BDMA_AbortJob(struct BDMAJob *);
 
@@ -124,7 +120,7 @@ brcm-dma.resource/BDMA_AbortJob                     brcm-dma.resource/BDMA_Abort
    SEE ALSO
 	brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_CheckJob()
 
-brcm-dma.resource/BDMA_AddJobTagList           brcm-dma.resource/BDMA_AddJobTagList
+brcm-dma.resource/BDMA_AddJobTagList     brcm-dma.resource/BDMA_AddJobTagList
 
    NAME
 	BDMA_AddJobTagList -- describe a job and start it, for one use
@@ -163,7 +159,7 @@ brcm-dma.resource/BDMA_AddJobTagList           brcm-dma.resource/BDMA_AddJobTagL
    SEE ALSO
 	brcm-dma.resource/BDMA_AllocJobTagList(), brcm-dma.resource/BDMA_StartJob(), brcm-dma.resource/BDMA_WaitJob()
 
-brcm-dma.resource/BDMA_AddJobTags                 brcm-dma.resource/BDMA_AddJobTags
+brcm-dma.resource/BDMA_AddJobTags           brcm-dma.resource/BDMA_AddJobTags
 
    NAME
 	BDMA_AddJobTags -- BDMA_AddJobTagList() with the tags as arguments
@@ -181,7 +177,7 @@ brcm-dma.resource/BDMA_AddJobTags                 brcm-dma.resource/BDMA_AddJobT
    SEE ALSO
 	brcm-dma.resource/BDMA_AddJobTagList()
 
-brcm-dma.resource/BDMA_AddRangeTagList       brcm-dma.resource/BDMA_AddRangeTagList
+brcm-dma.resource/BDMA_AddRangeTagList brcm-dma.resource/BDMA_AddRangeTagList
 
    NAME
 	BDMA_AddRangeTagList -- declare a range of memory for the jobs of a client (V0.2)
@@ -240,7 +236,7 @@ brcm-dma.resource/BDMA_AddRangeTagList       brcm-dma.resource/BDMA_AddRangeTagL
    SEE ALSO
 	brcm-dma.resource/BDMA_RemRange(), brcm-dma.resource/BDMA_AllocJobTagList()
 
-brcm-dma.resource/BDMA_AddRangeTags             brcm-dma.resource/BDMA_AddRangeTags
+brcm-dma.resource/BDMA_AddRangeTags       brcm-dma.resource/BDMA_AddRangeTags
 
    NAME
 	BDMA_AddRangeTags -- BDMA_AddRangeTagList() with the tags as arguments (V0.2)
@@ -258,7 +254,7 @@ brcm-dma.resource/BDMA_AddRangeTags             brcm-dma.resource/BDMA_AddRangeT
    SEE ALSO
 	brcm-dma.resource/BDMA_AddRangeTagList()
 
-brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagList
+brcm-dma.resource/BDMA_AllocJobTagList brcm-dma.resource/BDMA_AllocJobTagList
 
    NAME
 	BDMA_AllocJobTagList -- describe a job
@@ -335,7 +331,7 @@ brcm-dma.resource/BDMA_AllocJobTagList       brcm-dma.resource/BDMA_AllocJobTagL
    SEE ALSO
 	brcm-dma.resource/BDMA_StartJob(), brcm-dma.resource/BDMA_SetJobTagList(), brcm-dma.resource/BDMA_FreeJob()
 
-brcm-dma.resource/BDMA_AllocJobTags             brcm-dma.resource/BDMA_AllocJobTags
+brcm-dma.resource/BDMA_AllocJobTags       brcm-dma.resource/BDMA_AllocJobTags
 
    NAME
 	BDMA_AllocJobTags -- BDMA_AllocJobTagList() with the tags as arguments
@@ -352,7 +348,7 @@ brcm-dma.resource/BDMA_AllocJobTags             brcm-dma.resource/BDMA_AllocJobT
    SEE ALSO
 	brcm-dma.resource/BDMA_AllocJobTagList()
 
-brcm-dma.resource/BDMA_CheckJob                     brcm-dma.resource/BDMA_CheckJob
+brcm-dma.resource/BDMA_CheckJob               brcm-dma.resource/BDMA_CheckJob
 
    NAME
 	BDMA_CheckJob -- has the job been replied?
@@ -376,14 +372,14 @@ brcm-dma.resource/BDMA_CheckJob                     brcm-dma.resource/BDMA_Check
    SEE ALSO
 	brcm-dma.resource/BDMA_WaitJob()
 
-brcm-dma.resource/BDMA_CloseClient               brcm-dma.resource/BDMA_CloseClient
+brcm-dma.resource/BDMA_CloseClient         brcm-dma.resource/BDMA_CloseClient
 
    NAME
 	BDMA_CloseClient -- end a session
 
    SYNOPSIS
 	BDMA_CloseClient( client )
-	a0
+	                  a0
 
 	VOID BDMA_CloseClient(struct BDMAClient *);
 
@@ -402,14 +398,14 @@ brcm-dma.resource/BDMA_CloseClient               brcm-dma.resource/BDMA_CloseCli
    SEE ALSO
 	brcm-dma.resource/BDMA_OpenClientTagList()
 
-brcm-dma.resource/BDMA_FreeJob                       brcm-dma.resource/BDMA_FreeJob
+brcm-dma.resource/BDMA_FreeJob                 brcm-dma.resource/BDMA_FreeJob
 
    NAME
 	BDMA_FreeJob -- give a job back
 
    SYNOPSIS
 	BDMA_FreeJob( job )
-	a0
+	              a0
 
 	VOID BDMA_FreeJob(struct BDMAJob *);
 
@@ -425,7 +421,7 @@ brcm-dma.resource/BDMA_FreeJob                       brcm-dma.resource/BDMA_Free
    SEE ALSO
 	brcm-dma.resource/BDMA_AllocJobTagList()
 
-brcm-dma.resource/BDMA_OpenClientTagList   brcm-dma.resource/BDMA_OpenClientTagList
+brcm-dma.resource/BDMA_OpenClientTagList brcm-dma.resource/BDMA_OpenClientTagList
 
    NAME
 	BDMA_OpenClientTagList -- begin a session
@@ -460,7 +456,7 @@ brcm-dma.resource/BDMA_OpenClientTagList   brcm-dma.resource/BDMA_OpenClientTagL
    SEE ALSO
 	brcm-dma.resource/BDMA_CloseClient()
 
-brcm-dma.resource/BDMA_OpenClientTags         brcm-dma.resource/BDMA_OpenClientTags
+brcm-dma.resource/BDMA_OpenClientTags   brcm-dma.resource/BDMA_OpenClientTags
 
    NAME
 	BDMA_OpenClientTags -- BDMA_OpenClientTagList() with the tags as arguments
@@ -477,14 +473,14 @@ brcm-dma.resource/BDMA_OpenClientTags         brcm-dma.resource/BDMA_OpenClientT
    SEE ALSO
 	brcm-dma.resource/BDMA_OpenClientTagList()
 
-brcm-dma.resource/BDMA_QueryInfoTagList             brcm-dma.resource/BDMA_QueryInfoTagList
+brcm-dma.resource/BDMA_QueryInfoTagList brcm-dma.resource/BDMA_QueryInfoTagList
 
    NAME
 	BDMA_QueryInfoTagList -- what the engine is
 
    SYNOPSIS
 	answers = BDMA_QueryInfoTagList( tagList )
-	d0                           a0
+	d0                               a0
 
 	ULONG BDMA_QueryInfoTagList(CONST struct TagItem *);
 
@@ -537,21 +533,21 @@ brcm-dma.resource/BDMA_QueryInfoTagList             brcm-dma.resource/BDMA_Query
    NOTES
 	A task context.
 
-brcm-dma.resource/BDMA_QueryInfoTags                   brcm-dma.resource/BDMA_QueryInfoTags
+brcm-dma.resource/BDMA_QueryInfoTags     brcm-dma.resource/BDMA_QueryInfoTags
 
    NAME
 	BDMA_QueryInfoTags -- BDMA_QueryInfoTagList() with the tags as arguments
 
    SYNOPSIS
 	answers = BDMA_QueryInfoTags( tag1Type, ... )
-	d0                        a0
+	d0                            a0
 
 	ULONG BDMA_QueryInfoTags(ULONG, ...);
 
    FUNCTION
 	The same as BDMA_QueryInfoTagList(); generated inline from the SFD, not a function of the resource.
 
-brcm-dma.resource/BDMA_QueryJobTagList       brcm-dma.resource/BDMA_QueryJobTagList
+brcm-dma.resource/BDMA_QueryJobTagList brcm-dma.resource/BDMA_QueryJobTagList
 
    NAME
 	BDMA_QueryJobTagList -- what a job says about itself
@@ -579,7 +575,7 @@ brcm-dma.resource/BDMA_QueryJobTagList       brcm-dma.resource/BDMA_QueryJobTagL
    SEE ALSO
 	brcm-dma.resource/BDMA_WaitJob()
 
-brcm-dma.resource/BDMA_QueryJobTags             brcm-dma.resource/BDMA_QueryJobTags
+brcm-dma.resource/BDMA_QueryJobTags       brcm-dma.resource/BDMA_QueryJobTags
 
    NAME
 	BDMA_QueryJobTags -- BDMA_QueryJobTagList() with the tags as arguments
@@ -593,7 +589,7 @@ brcm-dma.resource/BDMA_QueryJobTags             brcm-dma.resource/BDMA_QueryJobT
    FUNCTION
 	The same as BDMA_QueryJobTagList(); generated inline from the SFD, not a function of the resource.
 
-brcm-dma.resource/BDMA_RemRange                 brcm-dma.resource/BDMA_RemRange
+brcm-dma.resource/BDMA_RemRange               brcm-dma.resource/BDMA_RemRange
 
    NAME
 	BDMA_RemRange -- take back a range of memory (V0.2)
@@ -624,7 +620,7 @@ brcm-dma.resource/BDMA_RemRange                 brcm-dma.resource/BDMA_RemRange
    SEE ALSO
 	brcm-dma.resource/BDMA_AddRangeTagList(), brcm-dma.resource/BDMA_CloseClient()
 
-brcm-dma.resource/BDMA_ResetStatistics          brcm-dma.resource/BDMA_ResetStatistics
+brcm-dma.resource/BDMA_ResetStatistics brcm-dma.resource/BDMA_ResetStatistics
 
    NAME
 	BDMA_ResetStatistics -- set the statistics back to zero
@@ -648,7 +644,7 @@ brcm-dma.resource/BDMA_ResetStatistics          brcm-dma.resource/BDMA_ResetStat
    SEE ALSO
 	brcm-dma.resource/BDMA_QueryInfoTagList()
 
-brcm-dma.resource/BDMA_SetJobTagList           brcm-dma.resource/BDMA_SetJobTagList
+brcm-dma.resource/BDMA_SetJobTagList     brcm-dma.resource/BDMA_SetJobTagList
 
    NAME
 	BDMA_SetJobTagList -- change a job that is not in flight
@@ -677,7 +673,7 @@ brcm-dma.resource/BDMA_SetJobTagList           brcm-dma.resource/BDMA_SetJobTagL
    SEE ALSO
 	brcm-dma.resource/BDMA_AllocJobTagList(), brcm-dma.resource/BDMA_StartJob()
 
-brcm-dma.resource/BDMA_SetJobTags                 brcm-dma.resource/BDMA_SetJobTags
+brcm-dma.resource/BDMA_SetJobTags           brcm-dma.resource/BDMA_SetJobTags
 
    NAME
 	BDMA_SetJobTags -- BDMA_SetJobTagList() with the tags as arguments
@@ -691,14 +687,14 @@ brcm-dma.resource/BDMA_SetJobTags                 brcm-dma.resource/BDMA_SetJobT
    FUNCTION
 	The same as BDMA_SetJobTagList(); generated inline from the SFD, not a function of the resource.
 
-brcm-dma.resource/BDMA_StartJob                     brcm-dma.resource/BDMA_StartJob
+brcm-dma.resource/BDMA_StartJob               brcm-dma.resource/BDMA_StartJob
 
    NAME
 	BDMA_StartJob -- queue a job
 
    SYNOPSIS
 	BDMA_StartJob( job )
-	a0
+	               a0
 
 	VOID BDMA_StartJob(struct BDMAJob *);
 
@@ -723,7 +719,7 @@ brcm-dma.resource/BDMA_StartJob                     brcm-dma.resource/BDMA_Start
    SEE ALSO
 	brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_AbortJob()
 
-brcm-dma.resource/BDMA_WaitClient                   brcm-dma.resource/BDMA_WaitClient
+brcm-dma.resource/BDMA_WaitClient           brcm-dma.resource/BDMA_WaitClient
 
    NAME
 	BDMA_WaitClient -- sleep until the jobs of a client are over (V0.3)
@@ -766,7 +762,7 @@ brcm-dma.resource/BDMA_WaitClient                   brcm-dma.resource/BDMA_WaitC
    SEE ALSO
 	brcm-dma.resource/BDMA_AddJobTagList(), brcm-dma.resource/BDMA_WaitJob(), brcm-dma.resource/BDMA_CloseClient()
 
-brcm-dma.resource/BDMA_WaitJob                       brcm-dma.resource/BDMA_WaitJob
+brcm-dma.resource/BDMA_WaitJob                 brcm-dma.resource/BDMA_WaitJob
 
    NAME
 	BDMA_WaitJob -- sleep until a job is over
@@ -795,3 +791,5 @@ brcm-dma.resource/BDMA_WaitJob                       brcm-dma.resource/BDMA_Wait
 
    SEE ALSO
 	brcm-dma.resource/BDMA_StartJob(), brcm-dma.resource/BDMA_CheckJob(), brcm-dma.resource/BDMA_AbortJob()
+
+
